@@ -329,19 +329,20 @@ endif()
 
 if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
   target_link_libraries(ddisasm disasm_main scc_pass no_return_pass
-                        function_inference_pass)
+                        function_inference_pass struct_recovery_pass)
   target_link_options(
     ddisasm PRIVATE /WHOLEARCHIVE:no_return_pass$<$<CONFIG:Debug>:d>
-    /WHOLEARCHIVE:function_inference_pass$<$<CONFIG:Debug>:d>)
+    /WHOLEARCHIVE:function_inference_pass$<$<CONFIG:Debug>:d>
+    /WHOLEARCHIVE:struct_recovery_pass$<$<CONFIG:Debug>:d>)
 else()
   if(APPLE)
     target_link_libraries(
       ddisasm PRIVATE disasm_main scc_pass -Wl,-all_load no_return_pass
-                      function_inference_pass -Wl,-noall_load)
+                      function_inference_pass struct_recovery_pass -Wl,-noall_load)
   else()
     target_link_libraries(
       ddisasm PRIVATE disasm_main scc_pass -Wl,--whole-archive no_return_pass
-                      function_inference_pass -Wl,--no-whole-archive)
+                      function_inference_pass struct_recovery_pass -Wl,--no-whole-archive)
   endif()
 endif()
 

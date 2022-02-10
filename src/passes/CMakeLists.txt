@@ -108,3 +108,53 @@ if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 else()
   target_compile_options(function_inference_pass PRIVATE -O3)
 endif()
+
+# ============ Struct Recovery pass =========
+
+if(WIN32)
+  set(STRUCT_RECOVERY_DATALOG_MAIN
+      "$$(wslpath ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery.dl)")
+else()
+  set(STRUCT_RECOVERY_DATALOG_MAIN
+      ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery.dl)
+endif()
+
+set(STRUCT_RECOVERY_DATALOG_SOURCES datalog/struct_recovery.dl)
+
+set(STRUCT_RECOVERY_CPP
+    "${CMAKE_BINARY_DIR}/src/passes/souffle_struct_recovery.cpp")
+
+add_custom_command(
+  OUTPUT ${STRUCT_RECOVERY_CPP}
+         # Souffle includes the path of the output file in the generated program
+         # name. Change directory and use a relative path so the name does not
+         # depend on build location.
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/passes"
+  COMMAND ${SOUFFLE} ${STRUCT_RECOVERY_DATALOG_MAIN} -g
+          souffle_struct_recovery.cpp -jauto
+  DEPENDS ${STRUCT_RECOVERY_DATALOG_SOURCES})
+
+add_library(struct_recovery_pass STATIC StructRecoveryPass.cpp
+                                           ${STRUCT_RECOVERY_CPP})
+
+target_link_libraries(struct_recovery_pass gtirb gtirb_decoder)
+
+target_compile_definitions(struct_recovery_pass PRIVATE __EMBEDDED_SOUFFLE__)
+target_compile_definitions(struct_recovery_pass PRIVATE RAM_DOMAIN_SIZE=64)
+target_compile_options(struct_recovery_pass PRIVATE ${OPENMP_FLAGS})
+if(CAPSTONE_INCLUDE_DIR)
+  target_include_directories(struct_recovery_pass
+                             PRIVATE ${CAPSTONE_INCLUDE_DIR})
+endif()
+if(SOUFFLE_INCLUDE_DIR)
+  target_include_directories(struct_recovery_pass SYSTEM
+                             PRIVATE ${SOUFFLE_INCLUDE_DIR})
+endif()
+
+if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+  set_common_msvc_options(struct_recovery_pass)
+
+  set_souffle_msvc_options(struct_recovery_pass)
+else()
+  target_compile_options(struct_recovery_pass PRIVATE -O3)
+endif()

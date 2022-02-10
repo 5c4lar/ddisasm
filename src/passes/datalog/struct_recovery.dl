@@ -1,0 +1,64 @@
+
+.type address <: unsigned
+.type scc <:unsigned
+.type operand_code <: unsigned
+.type register <: symbol
+.type id <: unsinged
+
+.decl block(Address:address, Size:unsigned)
+.input block
+
+.decl next_block(Block1:address,Block2:address)
+.input next_block
+///////////////////////////////////////////////////
+.decl instruction(ea:address, size:unsigned, prefix:symbol, opcode:symbol,
+          op1:operand_code, op2:operand_code, op3:operand_code, op4:operand_code,
+          immOffset:unsigned,displacementOffset:unsigned)
+.input instruction
+
+// three kinds of operators
+.decl op_regdirect(code:operand_code,register_name:register)
+.input op_regdirect
+
+.decl op_immediate(code:operand_code,offset:number)
+.input op_immediate
+
+.decl op_indirect(code:operand_code,reg1:register, reg2:register, reg3:register,
+        multiplier:number, offset:number, size_value:unsigned)
+.input op_indirect
+
+//////////////////////////////////////////////////////////////
+
+.decl cfg_edge(Src:address,Dest:address,Conditional:symbol,Indirect:symbol,Type:symbol)
+.input cfg_edge
+
+.decl cfg_edge_to_top(Src:address,Conditional:symbol,Indirect:symbol,Type:symbol)
+.input cfg_edge_to_top
+
+.decl cfg_edge_to_symbol(Src:address,Symbol:symbol,Conditional:symbol,Indirect:symbol,Type:symbol)
+.input cfg_edge_to_symbol
+
+.decl symbolic_expression(Address:address,Symbol:address,Offset:number)
+.input symbolic_expression
+
+.decl symbol_minus_symbol(Address:address,Symbol1:address,Symbol2:address,Offset:number)
+.input symbol_minus_symbol
+
+.decl function_entry(Address:address)
+.input function_entry
+
+.decl type_def(Size:unsigned, Id:id)
+.output type_def
+
+.decl field_def(ParentId: id, Offset: unsigned, FiledType: id)
+.output field_def
+
+in_function_final(Function,Function):-
+    function_entry_final(Function).
+
+in_function_final(Block,Function):-
+    in_function_final(BlockPrev,Function),
+    next_block(BlockPrev,Block),
+    !function_entry_final(Block).
+
+

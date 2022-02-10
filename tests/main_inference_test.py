@@ -21,7 +21,7 @@ class TestMainInference(unittest.TestCase):
         self.fail("No main symbol disassembled")
 
     def check_main_inference(
-        self, make_dir, binary, strip_exe="strip", **compile_opts,
+        self, make_dir, binary, strip=False, strip_exe="strip", **compile_opts,
     ):
         """
         Test that the main function is inferred in the same location for
@@ -34,11 +34,9 @@ class TestMainInference(unittest.TestCase):
             self.assertTrue(
                 disassemble(
                     binary,
-                    strip_exe,
-                    False,
-                    False,
+                    strip_exe=strip_exe,
+                    strip=strip,
                     format="--ir",
-                    extension="gtirb",
                     extra_args=["--skip-function-analysis"],
                 )[0],
                 msg="Disassembly failed",
@@ -46,12 +44,7 @@ class TestMainInference(unittest.TestCase):
             module = gtirb.IR.load_protobuf(binary + ".gtirb").modules[0]
             self.assertTrue(
                 disassemble(
-                    binary,
-                    strip_exe,
-                    True,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
+                    binary, strip_exe=strip_exe, strip=True, format="--ir",
                 )[0],
                 msg="Disassembly failed (stripped)",
             )
@@ -80,6 +73,7 @@ class TestMainInference(unittest.TestCase):
                 continue  # no ex1 in this .yaml.
 
             arch = test.get("arch")
+            strip = test["test"].get("strip", False)
             strip_exe = test["test"]["strip_exe"]
             exec_wrapper = test["test"]["wrapper"]
             compilers = test["build"]["c"]
@@ -95,6 +89,7 @@ class TestMainInference(unittest.TestCase):
                         self.check_main_inference(
                             ex_dir / "ex1",
                             "ex",
+                            strip=strip,
                             strip_exe=strip_exe,
                             compiler=compiler,
                             cxx_compiler=cxx_compiler,

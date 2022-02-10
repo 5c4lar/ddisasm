@@ -1,5 +1,9 @@
-# 1.5.2 (Unreleased)
+# 1.5.3 (Unreleased)
+* TBD
+
+# 1.5.2
 * Add ELF x86_64 .o support.
+* Add static archive support.
 
 # 1.5.1
 * Use dedicated symbolic expression attributes.

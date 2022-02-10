@@ -32,16 +32,7 @@ class LibrarySymbolsTests(unittest.TestCase):
         library = "ex.so"
         with cd(ex_dir / "ex_lib_symbols"):
             self.assertTrue(compile("gcc", "g++", "-O0", []))
-            self.assertTrue(
-                disassemble(
-                    library,
-                    "strip",
-                    False,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
-                )
-            )
+            self.assertTrue(disassemble(library, format="--ir")[0])
 
             ir_library = gtirb.IR.load_protobuf(library + ".gtirb")
             m = ir_library.modules[0]
@@ -76,16 +67,7 @@ class AuxDataTests(unittest.TestCase):
         binary = "ex"
         with cd(ex_asm_dir / "ex_cfi_directives"):
             self.assertTrue(compile("gcc", "g++", "-O0", []))
-            self.assertTrue(
-                disassemble(
-                    binary,
-                    "strip",
-                    False,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
-                )
-            )
+            self.assertTrue(disassemble(binary, format="--ir")[0])
 
             ir_library = gtirb.IR.load_protobuf(binary + ".gtirb")
             m = ir_library.modules[0]
@@ -123,18 +105,14 @@ class AuxDataTests(unittest.TestCase):
             self.assertTrue(
                 disassemble(
                     "ex",
-                    False,
-                    False,
-                    False,
                     format="--ir",
-                    extension="gtirb",
                     extra_args=[
                         "-F",
                         "--with-souffle-relations",
                         "--debug-dir",
                         "dbg",
                     ],
-                )
+                )[0]
             )
 
             # load the gtirb
@@ -169,16 +147,7 @@ class MovedLabelTests(unittest.TestCase):
         binary = "ex"
         with cd(ex_asm_dir / "ex_moved_label"):
             self.assertTrue(compile("gcc", "g++", "-Os", []))
-            self.assertTrue(
-                disassemble(
-                    binary,
-                    "strip",
-                    False,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
-                )
-            )
+            self.assertTrue(disassemble(binary, format="--ir",)[0])
 
             ir_library = gtirb.IR.load_protobuf(binary + ".gtirb")
             m = ir_library.modules[0]
@@ -215,27 +184,12 @@ class RawGtirbTests(unittest.TestCase):
             # Output GTIRB file without disassembling.
             self.assertTrue(
                 disassemble(
-                    binary,
-                    False,
-                    False,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
-                    extra_args=["--no-analysis"],
-                )
+                    binary, format="--ir", extra_args=["--no-analysis"],
+                )[0]
             )
 
             # Disassemble GTIRB input file.
-            self.assertTrue(
-                disassemble(
-                    "ex.gtirb",
-                    False,
-                    False,
-                    False,
-                    format="--asm",
-                    extension="s",
-                )
-            )
+            self.assertTrue(disassemble("ex.gtirb", format="--asm")[0])
 
             self.assertTrue(reassemble("gcc", "ex.gtirb", extra_flags=[]))
             self.assertTrue(test())
@@ -256,17 +210,7 @@ class DataDirectoryTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0)
 
             # Disassemble to GTIRB file.
-            self.assertTrue(
-                disassemble(
-                    "ex.exe",
-                    False,
-                    False,
-                    False,
-                    format="--ir",
-                    extension="gtirb",
-                    extra_args=[],
-                )
-            )
+            self.assertTrue(disassemble("ex.exe", format="--ir")[0])
 
             # Load the GTIRB file.
             ir = gtirb.IR.load_protobuf("ex.exe.gtirb")
@@ -308,11 +252,7 @@ class PeResourcesTests(unittest.TestCase):
             self.assertTrue(
                 disassemble(
                     "ex.exe",
-                    False,
-                    False,
-                    False,
                     format="--asm",
-                    extension="s",
                     extra_args=[
                         "--generate-import-libs",
                         "--generate-resources",
@@ -336,6 +276,68 @@ class PeResourcesTests(unittest.TestCase):
 
             proc = subprocess.run(make("check"), stdout=subprocess.DEVNULL)
             self.assertEqual(proc.returncode, 0)
+
+
+class SymbolSelectionTests(unittest.TestCase):
+    @unittest.skipUnless(
+        platform.system() == "Linux", "This test is linux only."
+    )
+    def test_symbol_selection(self):
+        """
+        Test that the right symbols are chosen for relocations
+        and for functions.
+        """
+
+        binary = "ex"
+        with cd(ex_asm_dir / "ex_symbol_selection"):
+            self.assertTrue(compile("gcc", "g++", "-O0", []))
+            self.assertTrue(disassemble(binary, format="--ir")[0])
+
+            ir_library = gtirb.IR.load_protobuf(binary + ".gtirb")
+            m = ir_library.modules[0]
+
+            # check chosen symbols for sym exprs
+            def check_first_sym_expr(
+                block_name: str, target_name: str
+            ) -> None:
+                """
+                Check that the first Symexpr in a block identified
+                with symbol 'block_name' points to a symbol with
+                name 'target_name'
+                """
+                sym = [s for s in m.symbols if s.name == block_name][0]
+                assert isinstance(sym.referent, gtirb.CodeBlock)
+
+                block = sym.referent
+                sexpr = sorted(
+                    [
+                        t[1:]
+                        for t in block.byte_interval.symbolic_expressions_at(
+                            range(block.address, block.address + block.size)
+                        )
+                    ]
+                )[0]
+                self.assertEqual(sexpr[1].symbol.name, target_name)
+
+            check_first_sym_expr("Block_hello", "hello_not_hidden")
+            check_first_sym_expr("Block_how", "how_global")
+            check_first_sym_expr("Block_bye", "bye_obj")
+
+            # check symbols at the end of sections
+            syms = [
+                s
+                for s in m.symbols
+                if s.name
+                in ["__init_array_end", "end_of_data_section", "edata", "_end"]
+            ]
+            self.assertTrue(all(s.at_end for s in syms))
+
+            # check chosen function names
+            fun_names = {
+                sym.name for sym in m.aux_data["functionNames"].data.values()
+            }
+            self.assertIn("fun", fun_names)
+            self.assertNotIn("_fun", fun_names)
 
 
 if __name__ == "__main__":

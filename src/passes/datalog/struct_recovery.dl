@@ -3,7 +3,7 @@
 .type scc <:unsigned
 .type operand_code <: unsigned
 .type register <: symbol
-.type id <: unsinged
+.type id <: unsigned
 
 .decl block(Address:address, Size:unsigned)
 .input block
@@ -53,12 +53,14 @@
 .decl field_def(ParentId: id, Offset: unsigned, FiledType: id)
 .output field_def
 
-in_function_final(Function,Function):-
-    function_entry_final(Function).
+.decl in_function(Block:address,Function:address)
+.output in_function
+in_function(Function,Function):-
+    function_entry(Function).
 
-in_function_final(Block,Function):-
-    in_function_final(BlockPrev,Function),
+in_function(Block,Function):-
+    in_function(BlockPrev,Function),
     next_block(BlockPrev,Block),
-    !function_entry_final(Block).
+    !function_entry(Block).
 
 

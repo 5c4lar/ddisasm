@@ -1,0 +1,251 @@
+.comp StructRecovery {
+    .type type_description = [Offset:number, Size:unsigned, Type:symbol]
+    .type layout = [Prev:layout, Description:type_description]
+    .type value_desc = [EA:address, Base:register, Offset:number, Type:symbol]
+
+    .decl data_value_src(Src: value_desc, Ref: address, From:symbol)
+    .output data_value_src
+
+    .decl src_for_address(Src: value_desc)
+
+    .decl pattern_tape(Src: value_desc, Offset: number, Type: layout)
+    .output pattern_tape
+    
+    .decl merged_tape(Src: value_desc, Offset: number, Type: layout)
+    .output merged_tape
+
+    .decl should_not_merge(Src1: value_desc, Src2: value_desc)
+    .output should_not_merge
+
+    .decl merge_hint(Src1: value_desc, Src2: value_desc)
+    .output merge_hint
+
+    .decl mem_reg_edge(Src:value_desc, Dst:value_desc)
+    .output mem_reg_edge
+
+    .decl value_root(Val: value_desc, Root: value_desc)
+    .output value_root
+
+    .decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Base_value: value_desc)
+
+    .decl defined_reg(EA:address, Reg:register)
+
+    .decl reg_assign(EA:address, Reg_src:register, Reg_dst:register)
+
+    .decl mem_def(EA:address, Base:register, Offset:number)
+    .decl mem_used(EA:address, Base:register, Offset:number)
+    .decl mem_used_in_block(Block:address, Base:register, Offset:number)
+    .decl mem_defined_in_block(Block:address, Base:register, Offset:number)
+    .decl mem_block_last_def(EA:address, EA_def:address, Base:register, Offset:number)
+    .decl mem_last_def(Block:address, EA_def:address, Base:register, Offset:number)
+    .decl mem_def_used(EA_def:address, EA_used:address, Base:register, Offset:number)
+    .decl defined_mem(EA:address, Base:register, Offset:number)
+}
+.init struct_recovery = StructRecovery
+
+struct_recovery.reg_assign(EA, Reg_src, Reg_dst):-
+    arch.mov(EA),
+    code(EA),
+    instruction_get_src_op(EA, _, Op1),
+    op_regdirect_contains_reg(Op1,Reg_src),
+    instruction_get_dest_op(EA, _, Op2),
+    op_regdirect_contains_reg(Op2,Reg_dst).
+
+struct_recovery.defined_reg(EA, Reg):-
+    def_used(_, Reg, EA, _).
+
+struct_recovery.defined_mem(EA, Base, Offset):-
+    struct_recovery.mem_def_used(_, EA, Base, Offset).
+
+struct_recovery.data_value_src([Function, Reg, 0, "reg"], EA, "caller"):-
+    used(EA,Reg,_),
+    code_in_refined_block(EA,Block),
+    function_inference.in_function(Block, Function),
+    !struct_recovery.defined_reg(EA, Reg).
+
+struct_recovery.data_value_src([EA, Reg, 0, "reg"], EA_used, "callee"):-
+    instruction_get_operation(EA,Operation),
+    arch.call_operation(Operation),
+    arch.function_non_maintained_reg(Reg),
+    def_used(EA, Reg, EA_used, _).
+
+struct_recovery.data_value_src([EA, Reg, 0, "reg"], EA, "known"):-
+    value_reg(EA, Reg, EA, "NONE", 0, _, _).
+
+struct_recovery.data_value_src([Function, Base, Offset, "mem"], Ref, "stack_arg"):-
+    !struct_recovery.defined_mem(Ref, Base, Offset),
+    (arch.frame_pointer(Base) ; arch.stack_pointer(Base)),
+    struct_recovery.mem_used(Ref, Base, Offset),
+    code_in_refined_block(Ref,Block),
+    function_inference.in_function(Block, Function).
+
+struct_recovery.data_value_src([EA, Base, Offset, "mem"], EA, "immediate"):-
+    struct_recovery.mem_def(EA, Base, Offset),
+    arch.mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_immediate(SrcOp, _).
+
+struct_recovery.mem_reg_edge([EA, Reg, 0, "reg"], [EA, Base, Offset, "mem"]):-
+    arch.mov(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,"NONE",_,Offset,_),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_regdirect_contains_reg(SrcOp,Reg),
+    Base != "NONE".
+
+struct_recovery.mem_reg_edge([EA, Base, Offset, "mem"], [EA, Reg, 0, "reg"]):-
+    arch.mov(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_regdirect_contains_reg(DestOp,Reg),
+    Base != "NONE".
+
+struct_recovery.value_root([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type]):-
+    struct_recovery.data_value_src([EA_def, Base, Offset, Type], EA_ref, _).
+struct_recovery.value_root([EA, Reg2, 0, "reg"], Root):-
+    struct_recovery.value_root([EA, Reg1, 0, "reg"], Root),
+    struct_recovery.reg_assign(EA, Reg1, Reg2).
+struct_recovery.value_root([EA, Reg, 0, "reg"], Root):-
+    struct_recovery.value_root([EA1, Reg, 0, "reg"], Root),
+    def_used(EA1, Reg, EA, _),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_regdirect_contains_reg(SrcOp,Reg).
+struct_recovery.value_root(Dst, Root):-
+    struct_recovery.value_root(Src, Root),
+    struct_recovery.mem_reg_edge(Src, Dst).
+struct_recovery.value_root([EA, Base, Offset, "mem"], Root):-
+    struct_recovery.value_root([EA1, Base, Offset, "mem"], Root),
+    struct_recovery.mem_def_used(EA1, EA, Base, Offset).
+
+struct_recovery.mem_def(EA, Base, Offset):-
+    arch.mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,"NONE",_,Offset,_).
+
+struct_recovery.mem_used(EA, Base, Offset):-
+    instruction_get_operation(EA,Operation),
+    Operation != "LEA",
+    instruction_get_src_op(EA,_,SrcOp),
+    code(EA),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_).
+
+struct_recovery.mem_used_in_block(Block, Reg, Offset):-
+    struct_recovery.mem_used(EA, Reg, Offset),
+    code_in_refined_block(EA,Block).
+
+struct_recovery.mem_defined_in_block(Block, Reg, Offset):-
+    struct_recovery.mem_def(EA, Reg, Offset),
+    code_in_refined_block(EA,Block).
+
+struct_recovery.mem_block_last_def(EA_next, EA, Reg, Offset):-
+    struct_recovery.mem_def(EA, Reg, Offset),
+    local_next(EA, EA_next).
+
+struct_recovery.mem_block_last_def(EA_next, EA_def, Reg, Offset):-
+    struct_recovery.mem_block_last_def(EA, EA_def, Reg, Offset),
+    !struct_recovery.mem_def(EA, Reg, Offset),
+    local_next(EA, EA_next).
+    
+struct_recovery.mem_defined_in_block(Block, Reg, Offset):-
+    struct_recovery.mem_def(EA, Reg, Offset),
+    code_in_refined_block(EA, Block).
+
+struct_recovery.mem_last_def(Block, EA, Reg, Offset):-
+    struct_recovery.mem_def(EA, Reg, Offset),
+    block_next(EA, Block).
+
+struct_recovery.mem_last_def(Block, EA_def, Reg, Offset):-
+    struct_recovery.mem_block_last_def(Block_end, EA_def, Reg, Offset),
+    !struct_recovery.mem_def(Block_end, Reg, Offset),
+    block_next(Block_end, Block).
+
+struct_recovery.mem_last_def(Block_next, EA, Reg, Offset):-
+    struct_recovery.mem_last_def(Block, EA, Reg, Offset),
+    !struct_recovery.mem_defined_in_block(Block, Reg, Offset),
+    block_last_instruction(Block, Block_end),
+    block_next(Block_end, Block_next).
+
+// def_used intra-block
+struct_recovery.mem_def_used(EA_def, EA_used, Base, Offset):-
+    struct_recovery.mem_block_last_def(EA_used, EA_def, Base, Offset),
+    struct_recovery.mem_used(EA_used, Base, Offset),
+    def_used(EA, Base, EA_def, _),
+    def_used(EA, Base, EA_used, _).
+
+struct_recovery.mem_def_used(EA_def, EA_used, Base, Offset):-
+    struct_recovery.mem_last_def(Block, EA_def, Base, Offset),
+    code_in_refined_block(EA_used, Block),
+    !struct_recovery.mem_block_last_def(EA_used,_,Base,Offset),
+    struct_recovery.mem_used(EA_used, Base, Offset),
+    def_used(EA, Base, EA_def, _),
+    def_used(EA, Base, EA_used, _).
+
+struct_recovery.value_used_for_address([EA, Base, Offset, "mem"], Size, Direction, Base_value):-
+    def_used(EA_def, Base, EA, _),
+    (struct_recovery.mem_used(EA, Base, Offset),Direction="load";
+    struct_recovery.mem_def(EA, Base, Offset),Direction="store"),
+    struct_recovery.value_root([EA_def, Base, 0, "reg"], Base_value),
+    instruction_memory_access_size(EA, _, Size).
+
+struct_recovery.value_used_for_address(Mem, Size, Direction, Value):-
+    struct_recovery.value_used_for_address(Mem, Size, Direction, Value_root),
+    struct_recovery.value_root(Value, Value_root).
+    
+struct_recovery.src_for_address(Src):-
+    struct_recovery.data_value_src(Src, _, _),
+    struct_recovery.value_used_for_address(_, _, _, Src).
+
+struct_recovery.pattern_tape(Base, Offset, [nil, [0, Size, Type]]):-
+    struct_recovery.src_for_address(Base),
+    struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Base),
+    (struct_recovery.value_used_for_address(_, _, _, [EA, Mem_base, Offset, "mem"]),Type = "ptr";
+    !struct_recovery.value_used_for_address(_, _, _, [EA, Mem_base, Offset, "mem"]),Type = "data").
+
+struct_recovery.pattern_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
+    struct_recovery.pattern_tape(Id, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+    struct_recovery.pattern_tape(Id, Offset2, [nil, [0, Size2, Type2]]),
+    Offset1 + TypeOffset1 + as(Size1, number) <= Offset2,
+    TypeOffset2 = Offset2 - Offset1.
+
+struct_recovery.should_not_merge(Id1, Id2):-
+    Id1 != Id2,
+    struct_recovery.pattern_tape(Id1, Offset1, [nil, [0, Size1, _]]),
+    struct_recovery.pattern_tape(Id2, Offset2, [nil, [0, Size2, _]]),
+    Offset1 = Offset2,
+    Size1 != Size2.
+
+struct_recovery.should_not_merge(Id1, Id2):-
+    Id1 != Id2,
+    struct_recovery.pattern_tape(Id1, Offset1, [nil, [0, Size1, _]]),
+    struct_recovery.pattern_tape(Id2, Offset2, [nil, [0, _, _]]),
+    Offset1 < Offset2,
+    Offset1 + as(Size1, number) > Offset2.
+
+struct_recovery.merge_hint(Base_value1, Base_value2):-
+    struct_recovery.value_root([EA1, Base1, Offset1, "mem"], Root),
+    struct_recovery.value_root([EA2, Base2, Offset2, "mem"], Root),
+    struct_recovery.src_for_address(Base_value1),
+    struct_recovery.src_for_address(Base_value2),
+    struct_recovery.value_used_for_address([EA1, Base1, Offset1, "mem"], _, _, Base_value1),
+    struct_recovery.value_used_for_address([EA2, Base2, Offset2, "mem"], _, _, Base_value2),
+    Base_value1 != Base_value2.
+
+struct_recovery.merged_tape(Id, Offset, Type):-
+    struct_recovery.pattern_tape(Id, Offset, Type).
+
+struct_recovery.merged_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
+    struct_recovery.merged_tape(Id, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+    struct_recovery.merged_tape(Id, Offset2, [nil, [0, Size2, Type2]]),
+    Offset1 + TypeOffset1 + as(Size1, number) <= Offset2,
+    TypeOffset2 = Offset2 - Offset1.
+
+struct_recovery.merged_tape(Id2, Offset, [nil, Type]):-
+    !(struct_recovery.should_not_merge(Id1, Id2);struct_recovery.should_not_merge(Id2, Id1)),
+    struct_recovery.pattern_tape(Id1, Offset, [nil, Type]),
+    struct_recovery.pattern_tape(Id2, _, _),
+    Id1 != Id2,
+    struct_recovery.merge_hint(Id1, Id2).
+

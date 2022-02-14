@@ -22,24 +22,32 @@ void StructRecoveryPass::updateStructs(gtirb::Context& Context, gtirb::Module& M
 void StructRecoveryPass::computeStructs(gtirb::Context& Context, gtirb::Module& Module,
                                              unsigned int NThreads)
 {
-    std::cout << "Hello, struct recovery pass!" << std::endl;
     CompositeLoader Loader("souffle_struct_recovery");
-    // Load GTIRB and build program.
-    std::optional<DatalogProgram> StructRecovery = Loader.load(Module);
+    
     Loader.add(BlocksLoader);
     Loader.add(CfgLoader);
     Loader.add(SymbolicExpressionLoader);
 
     if(Module.getISA() == gtirb::ISA::X64)
         Loader.add<CodeBlockLoader<X64Loader>>();
+
+    if(Module.getAuxData<gtirb::schema::Padding>())
+        Loader.add(PaddingLoader{&Context});
+    if(Module.getAuxData<gtirb::schema::CfiDirectives>())
+        Loader.add(FdeEntriesLoader{&Context});
     if(Module.getAuxData<gtirb::schema::FunctionEntries>())
         Loader.add(FunctionEntriesLoader{&Context});
+
+    // Load GTIRB and build program.
+    std::optional<DatalogProgram> StructRecovery = Loader.load(Module);
+
     if(!StructRecovery)
     {
         std::cerr << "Could not create souffle_function_inference program" << std::endl;
         exit(1);
     }
 
+    loadRelations(StructRecovery->get(), *RelationDir);
     // Run function inference analysis.
     StructRecovery->threads(NThreads);
     StructRecovery->run();

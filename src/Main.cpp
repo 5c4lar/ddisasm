@@ -311,7 +311,7 @@ int main(int argc, char **argv)
         }
         printElapsedTimeSince(StartDisassembling);
 
-        if(!DebugDir.empty())
+        if(!DebugDir.empty()&&!vm.count("interpreter"))
         {
             std::cerr << "Writing results to debug dir " << DebugDir << std::endl;
             Souffle->writeRelations(DebugDir.string() + "/");
@@ -355,21 +355,29 @@ int main(int argc, char **argv)
             printElapsedTimeSince(StartFunctionAnalysis);
         }
 
+        // if (vm.count("struct")) {
+        //     std::cerr << "Recovering Structs" << std::flush;
+        //     StructRecoveryPass StructRecovery;
+        //     if(!DebugDir.empty())
+        //     {
+        //         fs::path PassDir;
+        //         PassDir = DebugDir / "pass-struct-recovery";
+        //         fs::create_directories(PassDir);
+        //         StructRecovery.setDebugDir(PassDir.string() + "/");
+        //         StructRecovery.setRelationDir(DebugDir.string() + "/");
+        //     }
+        //     else {
+        //         std::cerr << "Struct Recovery relies on debug dir relations." << std::flush;
+        //         return EXIT_FAILURE;
+        //     }
+        //     auto StructRecoveryAnalysis = std::chrono::high_resolution_clock::now();
+        //     StructRecovery.computeStructs(*GTIRB->Context, Module, Threads);
+        //     printElapsedTimeSince(StructRecoveryAnalysis);
+        // }
+
         // Remove provisional AuxData tables.
         Module.removeAuxData<gtirb::schema::Relocations>();
         Module.removeAuxData<gtirb::schema::ElfSectionIndex>();
-
-        if (vm.count("struct")) {
-            std::cerr << "Recovering Structs" << std::flush;
-            StructRecoveryPass StructRecovery;
-            if(vm.count("debug-dir") != 0)
-            {
-                StructRecovery.setDebugDir(vm["debug-dir"].as<std::string>() + "/");
-            }
-            auto StructRecoveryAnalysis = std::chrono::high_resolution_clock::now();
-            StructRecovery.computeStructs(*GTIRB->Context, Module, Threads);
-            printElapsedTimeSince(StructRecoveryAnalysis);
-        }
 
         // Pretty-print
         if(vm.count("debug") != 0)

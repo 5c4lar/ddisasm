@@ -26,55 +26,86 @@ This module stablishes basic information about register:
  - Whether they all callee or caller saved according to the ABI
 
 */
-
+track_register("AL", "RAX").
+track_register("AX", "RAX").
 track_register("EAX","RAX").
 track_register("RAX","RAX").
 
+track_register("BL", "RBX").
+track_register("BX", "RBX").
 track_register("EBX","RBX").
 track_register("RBX","RBX").
 
+track_register("CL", "RCX").
+track_register("CX", "RCX").
 track_register("ECX","RCX").
 track_register("RCX","RCX").
 
+track_register("DL", "RDX").
+track_register("DX", "RDX").
 track_register("EDX","RDX").
 track_register("RDX","RDX").
 
+track_register("DI", "RDI").
+track_register("DIL", "RDI").
 track_register("EDI","RDI").
 track_register("RDI","RDI").
 
+track_register("SI", "RSI").
+track_register("SIL", "RSI").
 track_register("ESI","RSI").
 track_register("RSI","RSI").
 
+track_register("BP","RBP").
+track_register("BPL","RBP").
 track_register("RBP","RBP").
 track_register("EBP","RBP").
 
 // track register for variable analysis
+track_register("SP","RSP").
+track_register("SPL","RSP").
 track_register("RSP","RSP").
 track_register("ESP","RSP").
 
 track_register("R8","R8").
 track_register("R8D","R8").
+track_register("R8W","R8").
+track_register("R8B","R8").
 
 track_register("R9","R9").
 track_register("R9D","R9").
+track_register("R9W","R9").
+track_register("R9B","R9").
 
 track_register("R10","R10").
 track_register("R10D","R10").
+track_register("R10W","R10").
+track_register("R10B","R10").
 
 track_register("R11","R11").
 track_register("R11D","R11").
+track_register("R11W","R11").
+track_register("R11B","R11").
 
 track_register("R12","R12").
 track_register("R12D","R12").
+track_register("R12W","R12").
+track_register("R12B","R12").
 
 track_register("R13","R13").
 track_register("R13D","R13").
+track_register("R13W","R13").
+track_register("R13B","R13").
 
 track_register("R14","R14").
 track_register("R14D","R14").
+track_register("R14W","R14").
+track_register("R14B","R14").
 
 track_register("R15","R15").
 track_register("R15D","R15").
+track_register("R15W","R15").
+track_register("R15B","R15").
 
 function_non_maintained_reg("RAX").
 function_non_maintained_reg("RCX").

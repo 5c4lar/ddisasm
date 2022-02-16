@@ -16,7 +16,7 @@
     .output value_def_used
     .decl defined_value(Val:value_desc)
     .output defined_value
-    .decl value_edge(Src:value_desc, Dst:value_desc)
+    .decl value_edge(Src:value_desc, Dst:value_desc, Type:symbol)
     .output value_edge
     // calculate relative addresses, add, sub, mult
     .decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Op3:value_desc, Operation:symbol)
@@ -52,8 +52,13 @@ struct_recovery.value_def([EA, Base, Offset, "mem"]):-
 
 struct_recovery.value_def([EA, Reg, 0, "reg"]):-
     code(EA),
+    !arch.reg_reg_arithmetic_operation(EA, Reg, _, _, _, _),
     instruction_get_dest_op(EA,_,Op),
     op_regdirect_contains_reg(Op,Reg).
+
+struct_recovery.value_def([EA, Reg, 0, "calc"]):-
+    code(EA),
+    arch.reg_reg_arithmetic_operation(EA,Reg,Reg,_,_,_).
 
 struct_recovery.value_def([EA, Reg, 0, "reg"]):-
     code(EA),
@@ -126,6 +131,10 @@ struct_recovery.value_used([EA, Reg, 0, "reg"]):-
     op_regdirect_contains_reg(Op,Reg),
     !is_xor_reset(EA).
 
+struct_recovery.value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    arch.reg_reg_arithmetic_operation(EA,Reg,Reg,_,_,_).
+
 struct_recovery.value_used([EA, Reg, 0, "base"]):-
     code(EA),
     instruction_get_op(EA,_,Op),
@@ -150,10 +159,6 @@ struct_recovery.value_used([EA, Reg, 0, "reg"]):-
     instruction_get_operation(EA, Operation),
     (Operation="PUSH";Operation="POP"),
     arch.stack_pointer(Reg).
-
-struct_recovery.value_used([EA, Reg, 0, "reg"]):-
-    arch.function_non_maintained_reg(Reg),
-    direct_call(EA,_).
 
 struct_recovery.value_used([EA, Reg, 0, "base"]):-
     code(EA),
@@ -182,6 +187,7 @@ struct_recovery.value_block_last_def(EA_next, [EA, Base, Offset, Type]):-
 struct_recovery.value_block_last_def(EA_next, [EA_def, Base, Offset, Type]):-
     struct_recovery.value_block_last_def(EA, [EA_def, Base, Offset, Type]),
     !struct_recovery.value_must_def([EA, Base, Offset, Type]),
+    !(struct_recovery.value_def([EA, Base, Offset, "calc"]),Type != "calc"),
     local_next(EA, EA_next).
 
 struct_recovery.value_last_def(Block, [EA, Base, Offset, Type]):-
@@ -206,22 +212,18 @@ struct_recovery.value_last_def(Block_next, [EA, Base, Offset, Type]):-
 struct_recovery.value_last_def(Block_next, [Block_end, Reg, 0, "reg"]):-
     flow_def(Block_end,Reg,Block_next,_).
 
-struct_recovery.value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "intra"):-
+struct_recovery.value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "intra_block"):-
     struct_recovery.value_used([EA, Base, Offset, Type1]),
     struct_recovery.value_block_last_def(EA, [EA_def, Base, Offset, Type]),
     (Type = Type1; Type = "reg"; Type="calc", Type1="reg").
 
-struct_recovery.value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "intra"):-
+struct_recovery.value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "inter_block"):-
     struct_recovery.value_last_def(Block, [EA_def, Base, Offset, Type]),
     code_in_refined_block(EA, Block),
     struct_recovery.value_def( [EA_dummy, Base, Offset, Type]),
     !struct_recovery.value_block_last_def(EA, [EA_dummy, Base, Offset, Type]),
     struct_recovery.value_used([EA, Base, Offset, Type1]),
     (Type = Type1; Type = "reg"; Type="calc", Type1="reg").
-
-struct_recovery.value_def_used([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type], "callee"):-
-    def_used_return_val_reg(EA_def, _, Reg, EA_used, _),
-    struct_recovery.value_used([EA_used, Reg, 0, Type]).
 
 struct_recovery.defined_value(Val):-
     struct_recovery.value_def_used(_, Val, _).
@@ -233,7 +235,7 @@ struct_recovery.value_src([EA_call, Reg, 0, "reg"], EA_call, "function"):-
 
 struct_recovery.value_src([EA, Reg, 0, "calc"], EA, "calc"):-
     struct_recovery.value_def([EA, Reg, 0, "calc"]).
-    
+
 struct_recovery.value_src([EA, Reg, 0, "reg"], EA, "known"):-
     value_reg(EA, Reg, EA, "NONE", 0, _, _).
 
@@ -247,13 +249,13 @@ struct_recovery.value_src([EA, Base, Offset, Type], EA, "immediate"):-
 struct_recovery.value_src([EA, Base, Address, "global"], EA, "global"):-
     struct_recovery.value_used([EA, Base, Address, "global"]).
 
-struct_recovery.value_edge([EA, Base_src, Offset_src, Type_src], [EA, Base_dst, Offset_dst, Type_dst]):-
+struct_recovery.value_edge([EA, Base_src, Offset_src, Type_src], [EA, Base_dst, Offset_dst, Type_dst], "mov"):-
     arch.mov(EA),
     struct_recovery.value_def([EA, Base_dst, Offset_dst, Type_dst]),
     struct_recovery.value_used([EA, Base_src, Offset_src, Type_src]),
     (Type_src="reg";Type_src="mem";Type_src="global").
 
-struct_recovery.value_edge([EA, Base, 0, "mem"], [EA, Reg, 0, "reg"]):-
+struct_recovery.value_edge([EA, Base, 0, "mem"], [EA, Reg, 0, "reg"], "pop"):-
     code(EA),
     instruction_get_operation(EA, Operation),
     Operation="POP",
@@ -261,7 +263,7 @@ struct_recovery.value_edge([EA, Base, 0, "mem"], [EA, Reg, 0, "reg"]):-
     instruction_get_dest_op(EA, _, DestOp),
     op_regdirect_contains_reg(DestOp, Reg).
     
-struct_recovery.value_edge([EA, Reg, 0, "reg"], [EA, Base, 8, "mem"]):-
+struct_recovery.value_edge([EA, Reg, 0, "reg"], [EA, Base, 8, "mem"], "push"):-
     code(EA),
     instruction_get_operation(EA, Operation),
     Operation="PUSH",
@@ -270,24 +272,32 @@ struct_recovery.value_edge([EA, Reg, 0, "reg"], [EA, Base, 8, "mem"]):-
     op_regdirect_contains_reg(SrcOp, Reg).
 
 // Reg args
-struct_recovery.value_edge([Function,Reg,0,Type], [EA,Reg,0,Type]):-
+struct_recovery.value_edge([EA_def,Reg,0,Type], [EA,Reg,0,Type], "caller"):-
     struct_recovery.value_used([EA,Reg,0,Type]),
     !arch.pc_register(Reg),
     code_in_refined_block(EA,Block),
     function_inference.in_function(Block, Function),
     !struct_recovery.defined_value([EA, Reg, 0, Type]),
-    (Type="reg";Type="base";Type="idx").
+    direct_call(EA_call, Function),
+    (Type="reg";Type="base";Type="idx"),
+    (
+        block_last_def(EA_call,EA_def,Reg)
+        ;
+        !block_last_def(EA_call,_,Reg),
+        code_in_refined_block(EA_call, EA_call_block),
+        last_def(EA_call_block,EA_def,Reg)
+    ).
 
-struct_recovery.value_edge([EA, Reg, 0, "reg"], [Callee, Reg, 0, "reg"]):-
-    code(EA),
-    direct_call(EA, Callee),
-    arch.function_non_maintained_reg(Reg).
+struct_recovery.value_edge([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type], "callee"):-
+    def_used_return_val_reg(EA_def, _, Reg, EA_used, _),
+    struct_recovery.value_used([EA_used, Reg, 0, Type]).
+    
 
 // def value root for src and its ref.
 struct_recovery.value_root([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type]):-
     struct_recovery.value_src([EA_def, Base, Offset, Type], EA_ref, _),
     struct_recovery.value_used([EA_ref, Base, Offset, Type1]),
-    !Type="calc".
+    (Type1=Type;EA_ref!=EA_def).
 
 // def value root for immediate and calc
 struct_recovery.value_root([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type]):-
@@ -302,7 +312,7 @@ struct_recovery.value_root(Used, Root):-
 // passed by value_edge
 struct_recovery.value_root(Dst, Root):-
     struct_recovery.value_root(Src, Root),
-    struct_recovery.value_edge(Src, Dst).
+    struct_recovery.value_edge(Src, Dst, _).
     
 struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, Offset):-
     struct_recovery.value_arithmetic_edge([EA, Base, 0, "calc"], Src, nil, [EA, "NONE", Immediate, "immediate"], Operation),
@@ -326,15 +336,15 @@ struct_recovery.value_used_for_address([EA, Base, Offset, "global"], Size, Direc
 
 struct_recovery.src_for_address(Src):-
     struct_recovery.value_src(Src, _, _),
-    struct_recovery.value_root([_, _, _, Type], Src),
-    Type="base".
+    struct_recovery.value_root([_, _, _, "base"], Src).
 
 struct_recovery.src_for_address([0, Base, 0, "global"]):-
     struct_recovery.value_used_for_address([_, Base, _, "global"], _, _, [0, Base, 0, "global"]).
 
+// TODO: better symbolic evaluation
 struct_recovery.pattern_tape(Base, Offset, [nil, [0, Size, Type]]):-
     struct_recovery.src_for_address(Base),
-    !struct_recovery.resolve_calc(Base,_,_),
+    // !struct_recovery.resolve_calc(Base,_,_),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Base),
     struct_recovery.value_root([EA, Mem_base, Offset, "mem"], Root),
     (struct_recovery.src_for_address(Root), Type="ptr";
@@ -346,14 +356,14 @@ struct_recovery.pattern_tape(Base, Address, [nil, [0, Size, Type]]):-
     (struct_recovery.src_for_address(Root), Type="ptr";
     !struct_recovery.src_for_address(Root), Type="data").
 
-struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Size, Type]]):-
-    struct_recovery.src_for_address(Calc),
-    struct_recovery.resolve_calc(Calc, Base, Offset_calc),
-    struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
-    struct_recovery.value_root([EA, Mem_base, Offset, "mem"], Root),
-    Offset_res=Offset_calc+Offset,
-    (struct_recovery.src_for_address(Root), Type="ptr";
-    !struct_recovery.src_for_address(Root), Type="data").
+// struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Size, Type]]):-
+//     struct_recovery.src_for_address(Calc),
+//     struct_recovery.resolve_calc(Calc, Base, Offset_calc),
+//     struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
+//     struct_recovery.value_root([EA, Mem_base, Offset, "mem"], Root),
+//     Offset_res=Offset_calc+Offset,
+//     (struct_recovery.src_for_address(Root), Type="ptr";
+//     !struct_recovery.src_for_address(Root), Type="data").
 
 struct_recovery.pattern_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
     struct_recovery.pattern_tape(Id, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),

@@ -4,6 +4,7 @@
     .type value_desc = [EA:address, Base:register, Offset:number, Type:symbol]
 
     .decl value_def(Val: value_desc)
+    .output value_def
     .decl value_used(Val: value_desc)
     .output value_used
     .decl value_must_def(Val:value_desc)
@@ -150,6 +151,10 @@ struct_recovery.value_used([EA, Reg, 0, "reg"]):-
     (Operation="PUSH";Operation="POP"),
     arch.stack_pointer(Reg).
 
+struct_recovery.value_used([EA, Reg, 0, "reg"]):-
+    arch.function_non_maintained_reg(Reg),
+    direct_call(EA,_).
+
 struct_recovery.value_used([EA, Reg, 0, "base"]):-
     code(EA),
     instruction_get_operation(EA, Operation),
@@ -221,35 +226,19 @@ struct_recovery.value_def_used([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type],
 struct_recovery.defined_value(Val):-
     struct_recovery.value_def_used(_, Val, _).
 
-struct_recovery.value_src([Function, Reg, 0, "reg"], EA, "caller"):-
-    struct_recovery.value_used([EA,Reg,0,Type]),
-    !arch.pc_register(Reg),
-    code_in_refined_block(EA,Block),
-    function_inference.in_function(Block, Function),
-    !struct_recovery.defined_value([EA, Reg, 0, Type]),
-    (Type="reg";Type="base";Type="idx").
+struct_recovery.value_src([EA_call, Reg, 0, "reg"], EA_call, "function"):-
+    direct_call(EA_call, Callee),
+    arch.return_val_reg(Reg),
+    cfg_edge_to_symbol(Callee, _, _).
 
 struct_recovery.value_src([EA, Reg, 0, "calc"], EA, "calc"):-
     struct_recovery.value_def([EA, Reg, 0, "calc"]).
-
-struct_recovery.value_src([EA, Reg, 0, "reg"], EA_used, "callee"):-
-    instruction_get_operation(EA,Operation),
-    arch.call_operation(Operation),
-    arch.function_non_maintained_reg(Reg),
-    struct_recovery.value_def_used([EA, Reg, 0, "reg"], [EA_used, Reg, 0, "reg"], _).
-
+    
 struct_recovery.value_src([EA, Reg, 0, "reg"], EA, "known"):-
     value_reg(EA, Reg, EA, "NONE", 0, _, _).
 
-struct_recovery.value_src([Function, Base, Offset, "mem"], Ref, "stack_arg"):-
-    !struct_recovery.defined_value([Ref, Base, Offset, "mem"]),
-    (arch.frame_pointer(Base) ; arch.stack_pointer(Base)),
-    code_in_refined_block(Ref,Block),
-    function_inference.in_function(Block, Function),
-    struct_recovery.value_used([Ref, Base, Offset, "mem"]).
-
-struct_recovery.value_src([EA, Base, Offset, "mem"], EA, "immediate"):-
-    struct_recovery.value_def([EA, Base, Offset, "mem"]),
+struct_recovery.value_src([EA, Base, Offset, Type], EA, "immediate"):-
+    struct_recovery.value_def([EA, Base, Offset, Type]),
     arch.mov(EA),
     code(EA),
     instruction_get_src_op(EA,_,SrcOp),
@@ -280,6 +269,20 @@ struct_recovery.value_edge([EA, Reg, 0, "reg"], [EA, Base, 8, "mem"]):-
     instruction_get_src_op(EA, _, SrcOp),
     op_regdirect_contains_reg(SrcOp, Reg).
 
+// Reg args
+struct_recovery.value_edge([Function,Reg,0,Type], [EA,Reg,0,Type]):-
+    struct_recovery.value_used([EA,Reg,0,Type]),
+    !arch.pc_register(Reg),
+    code_in_refined_block(EA,Block),
+    function_inference.in_function(Block, Function),
+    !struct_recovery.defined_value([EA, Reg, 0, Type]),
+    (Type="reg";Type="base";Type="idx").
+
+struct_recovery.value_edge([EA, Reg, 0, "reg"], [Callee, Reg, 0, "reg"]):-
+    code(EA),
+    direct_call(EA, Callee),
+    arch.function_non_maintained_reg(Reg).
+
 // def value root for src and its ref.
 struct_recovery.value_root([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type]):-
     struct_recovery.value_src([EA_def, Base, Offset, Type], EA_ref, _),
@@ -291,10 +294,12 @@ struct_recovery.value_root([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, 
     struct_recovery.value_src([EA_def, Base, Offset, Type], EA_ref, _),
     struct_recovery.value_def([EA_ref, Base, Offset, Type]).
 
+// passed by def_used
 struct_recovery.value_root(Used, Root):-
     struct_recovery.value_root(Def, Root),
     struct_recovery.value_def_used(Def, Used, _).
 
+// passed by value_edge
 struct_recovery.value_root(Dst, Root):-
     struct_recovery.value_root(Src, Root),
     struct_recovery.value_edge(Src, Dst).

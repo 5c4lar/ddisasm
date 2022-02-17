@@ -258,7 +258,7 @@ instruction_get_op(EA,Index,Op):-
     ).
 
 
-.decl instruction_get_dest_op(ea:address,index:number,op:operand_code)
+.decl instruction_get_dest_op(ea:address,index:operand_index,op:operand_code)
 
 instruction_get_dest_op(EA,1,Op):-
     arch.store_operation(Operation),

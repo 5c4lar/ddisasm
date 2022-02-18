@@ -72,7 +72,6 @@
     .decl loop_detected(Start:number, End:number, Steps:number, Counter:value_desc)
     .output loop_detected
 
-    
     // .decl should_not_merge(Src1: value_desc, Src2: value_desc)
     // .output should_not_merge
     // .decl merge_hint(Src1: value_desc, Src2: value_desc, Offset:number)
@@ -147,6 +146,12 @@ struct_recovery.value_def([EA, Base, Address, "global"]):-
     next(EA, PC),
     Address = as(Offset, number) + as(PC, number).
 
+struct_recovery.value_def([EA, Idx, Offset, "global_bias"]):-
+    arch.mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
+
 struct_recovery.value_def([EA, Reg, as(Size, number), "mem"]):-
     code(EA),
     instruction_get_operation(EA, Operation),
@@ -215,9 +220,27 @@ struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, Root_idx, Mult, Offset
     struct_recovery.value_root(Op1, Root, _),
     struct_recovery.value_root(Op2, Root_idx, _).
 
+struct_recovery.resolve_calc([EA, Base, Address, "global"], [0, "NONE", Address, "global"], nil, 0, 0):-
+    struct_recovery.value_def([EA, Base, Address, "global"]);
+    struct_recovery.value_used([EA, Base, Address, "global"]).
+
+struct_recovery.resolve_calc([EA, Idx, Address, "global_bias"], [0, "NONE", Address, "global"], Root_idx, Mult, 0):-
+    (struct_recovery.value_def([EA, Idx, Address, "global_bias"]),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,Mult,_,_);
+    struct_recovery.value_used([EA, Idx, Address, "global_bias"]),
+    instruction_get_src_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,Mult,_,_)),
+    struct_recovery.value_root([EA, Idx, 0, "idx"], Root_idx, _).
+
+// struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, Root_idx, Mult, Offset):-
+//     struct_recovery.value_arithmetic_edge([EA, Base, 0, "calc"], Op1, Op2, Mult, Offset),
+//     struct_recovery.value_root(Op1, Root, _),
+//     struct_recovery.value_root(Op2, Root_idx, _).
+    
 struct_recovery.resolve_calc([EA, Base, Offset, Type], [EA, Base, Offset, Type], nil, 0, 0):-
     struct_recovery.value_used_for_address(_, _, _, [EA, Base, Offset, Type]),
-    Type!="calc".
+    Type!="calc",Type!="global",Type!="global_bias".
 
 struct_recovery.resolve_calc(Src, nil, nil, 0, Immediate):-
     struct_recovery.value_src(Src, EA, "immediate"),
@@ -225,7 +248,6 @@ struct_recovery.resolve_calc(Src, nil, nil, 0, Immediate):-
     code(EA),
     instruction_get_src_op(EA,_,SrcOp),
     op_immediate(SrcOp, Immediate).
-    
 
 struct_recovery.value_must_def([EA, Base, Offset, Type]):-
     code(EA),
@@ -297,6 +319,12 @@ struct_recovery.value_used([EA, Reg, 0, "mem"]):-
     instruction_get_operation(EA, Operation),
     Operation="POP",
     arch.stack_pointer(Reg).
+
+struct_recovery.value_used([EA, Idx, Offset, "global_bias"]):-
+    arch.mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
 
 struct_recovery.loc_defined_in(Block, [Base, Offset, Type]):-
     struct_recovery.value_def([EA, Base, Offset, Type1]),
@@ -403,7 +431,7 @@ struct_recovery.value_edge([EA, Base_src, Offset_src, Type_src], [EA, Base_dst, 
     arch.mov(EA),
     struct_recovery.value_def([EA, Base_dst, Offset_dst, Type_dst]),
     struct_recovery.value_used([EA, Base_src, Offset_src, Type_src]),
-    (Type_src="reg";Type_src="mem";Type_src="global").
+    (Type_src="reg";Type_src="mem";Type_src="global";Type_src="global_bias").
 
 struct_recovery.value_edge([EA, Base, 0, "mem"], [EA, Reg, 0, "reg"], "pop"):-
     code(EA),
@@ -464,6 +492,12 @@ struct_recovery.value_root(Dst, Root, "value_edge"):-
     struct_recovery.value_root(Src, Root, _),
     struct_recovery.value_edge(Src, Dst, _).
 
+// passed by global mem
+struct_recovery.value_root([EA, Idx, Address, Type], Root, "global"):-
+    struct_recovery.value_root([_, _, Address, Type], Root, _),
+    struct_recovery.value_used([EA, Idx, Address, Type]),
+    (Type="global";Type="global_bias").
+
 struct_recovery.value_used_for_address([EA, Base, Offset, "mem"], Size, Direction, Value):-
     struct_recovery.src_for_address(Root),
     (struct_recovery.value_root(Value, Root, _);Value=Root),
@@ -472,21 +506,22 @@ struct_recovery.value_used_for_address([EA, Base, Offset, "mem"], Size, Directio
     struct_recovery.value_root([EA, Base, 0, "base"], Root, _),
     instruction_memory_access_size(EA, _, Size).
 
-struct_recovery.value_used_for_address([EA, Base, Offset, "global"], Size, Direction, [0, Base, 0, "global"]):-
-    (struct_recovery.value_used([EA, Base, Offset, "global"]),Direction="load";
-    struct_recovery.value_def([EA, Base, Offset, "global"]),Direction="store"),
-    instruction_memory_access_size(EA, _, Size).
+struct_recovery.value_used_for_address([EA, Base, Offset, Type], Size, Direction, [EA, Base, Offset, Type]):-
+    (struct_recovery.value_used([EA, Base, Offset, Type]),Direction="load";
+    struct_recovery.value_def([EA, Base, Offset, Type]),Direction="store"),
+    instruction_memory_access_size(EA, _, Size),
+    (Type="global";Type="global_bias").
 
 struct_recovery.src_for_address(Src):-
     struct_recovery.value_src(Src, _, _),
     struct_recovery.value_root([_, _, _, "base"], Src, _).
 
-struct_recovery.src_for_address([0, Base, 0, "global"]):-
-    struct_recovery.value_used_for_address([_, Base, _, "global"], _, _, [0, Base, 0, "global"]).
+// struct_recovery.src_for_address([0, Base, 0, "global"]):-
+//     struct_recovery.value_used_for_address([_, Base, _, "global"], _, _, [0, Base, 0, "global"]).
 
 struct_recovery.value_type([EA, Mem_base, Offset, Value_type], Type):-
     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
-    (Value_type="mem";Value_type="global"),
+    (Value_type="mem";Value_type="global";Value_type="global_bias"),
     (struct_recovery.src_for_address(Root), Type="ptr";
     !struct_recovery.src_for_address(Root), Type="data").
 
@@ -506,6 +541,14 @@ struct_recovery.array_desc(Base, Offset_res, [0, Size, Type], Len):-
     struct_recovery.value_type([EA, Mem_base, Offset, "mem"], Type),
     Len = as(Array_size / as(Size, unsigned), unsigned).
 
+struct_recovery.array_desc(Base, Offset_res, [0, Size, Type], Len):-
+    struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]),
+    struct_recovery.resolve_calc(Calc, Base, _, _, _),
+    struct_recovery.value_used_for_address([EA, Mem_base, Offset, Loc_type], Size, _, Calc),
+    struct_recovery.value_type([EA, Mem_base, Offset, Loc_type], Type),
+    Len = as(Array_size / as(Size, unsigned), unsigned),
+    (Loc_type="global";Loc_type="global_bias").
+
 struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Size, Type]]):-
     struct_recovery.src_for_address(Calc),
     struct_recovery.resolve_calc(Calc, Base, nil, _, Offset_calc),
@@ -523,9 +566,21 @@ struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):
     Array_size = as(Elems, unsigned) * as(Mult, unsigned) + Size,
     struct_recovery.value_type([EA, Mem_base, Offset, "mem"], _).
 
-struct_recovery.pattern_tape(Base, Address, [nil, [0, Size, Type]]):-
-    struct_recovery.value_used_for_address([EA, Reg, Address, "global"], Size, _, Base),
-    struct_recovery.value_type([EA, Reg, Address, "global"], Type).
+struct_recovery.pattern_tape(Base, 0, [nil, [0, Size, Type]]):-
+    struct_recovery.value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    struct_recovery.resolve_calc(Calc, Base, nil, 0, 0),
+    struct_recovery.value_type([EA, Reg, Address, GType], Type),
+    (GType="global";GType="global_bias").
+
+struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):-
+    struct_recovery.value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    struct_recovery.resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    struct_recovery.loop_detected(Start, End, Steps, Idx),
+    Offset_res=Offset_calc + Mult * Start,
+    Elems = ((End - Start) / Steps - 1),
+    Array_size = as(Elems, unsigned) * as(Mult, unsigned) + Size,
+    struct_recovery.value_type([EA, Reg, Address, GType], _),
+    (GType="global";GType="global_bias").
 
 struct_recovery.pattern_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
     struct_recovery.pattern_tape(Id, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
@@ -575,3 +630,4 @@ struct_recovery.pattern_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], 
 //     Offset = Offset1 + Offset_merge,
 //     struct_recovery.merge_hint(Id1, Id2, Offset_merge).
 
+// TODO: interprocedural global def used

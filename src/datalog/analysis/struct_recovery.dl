@@ -10,7 +10,7 @@
     .decl value_used(Val: value_desc)
     // .output value_used
     .decl value_must_def(Val:value_desc)
-    // loc defined intra
+    // loc defined intrax
     .decl loc_defined_in_block(EA:address, Loc: loc_desc)
     // .output loc_defined_in_block
     // def at block level
@@ -18,13 +18,13 @@
     // .output loc_defined_in
     .decl value_used_in_block(Block:address, Val:value_desc)
     .decl value_block_last_def(EA:address, Val:value_desc)
-    // .output value_block_last_def
+    .output value_block_last_def
     .decl value_last_def(Block:address, Val:value_desc)
     // .output value_last_def
 
     // value def_used intraprocedural
     .decl value_def_used(Def:value_desc, Used:value_desc, Type:symbol)
-    // .output value_def_used
+    .output value_def_used
 
     .decl def_usable_type(Type:symbol, Type1:symbol)
     .decl defined_value(Val:value_desc)
@@ -39,7 +39,7 @@
     .decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Mult:number, Offset:number)
     // .output value_arithmetic_edge
     .decl resolve_calc(Calc: value_desc, Src: value_desc, Idx:value_desc, Mult:number, Offset:number)
-    // .output resolve_calc
+    .output resolve_calc
 
     // where values are from
     .decl value_src(Src: value_desc, Ref: address, From:symbol)
@@ -54,7 +54,7 @@
     // .output src_for_address
     // Mem is accessed with Size and source of the base pointer is Base_value
     .decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Base_value: value_desc)
-    // .output value_used_for_address
+    .output value_used_for_address
     
     .decl value_type_helper(Location:value_desc, Type:symbol)
     // .output value_type_helper
@@ -342,6 +342,7 @@ struct_recovery.value_block_last_def(EA_next, [EA_def, Base, Offset, Type]):-
     struct_recovery.value_block_last_def(EA, [EA_def, Base, Offset, Type]),
     !struct_recovery.value_must_def([EA, Base, Offset, Type]),
     !struct_recovery.value_def([EA, Base, Offset, "calc"]),
+    !struct_recovery.value_def([EA, Base, Offset, "reg"]),
     struct_recovery.local_next(EA, EA_next).
 
 struct_recovery.value_last_def(Block, [EA, Base, Offset, Type]):-
@@ -636,6 +637,17 @@ struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1,
     struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
     struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle),
     struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle),
+    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1.
+
+struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+    struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle1),
+    struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle2),
+    Handle1_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle1),
+    Handle2_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle2),
+    Handle1_start < Handle2_start,
     Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
     TypeOffset2 = Offset2 - Offset1.
 

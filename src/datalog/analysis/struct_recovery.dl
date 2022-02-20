@@ -68,12 +68,15 @@
     .output array_desc
 
     // Combine all access pattern originate from the pointer Src
-    .decl pattern_tape(Src: value_desc, Offset: number, Type: layout)
+    .decl pattern_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
+    .output pattern_tape
+    .decl access_handle(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Handle:value_desc)
     // Merge pattern defined for the same object
-    .decl merged_tape(Src: value_desc, Offset: number, Type: layout)
+    .decl merged_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
+    .output merged_tape
     // Select the best object candidate from merged_tape.
-    .decl object_candidate_helper(Src:value_desc, Offset:number, Type: layout, Max_offset:number)
-    .decl object_candidate(Src:value_desc, Offset: number, Type: layout)
+    .decl object_candidate_helper(Src:value_desc, Idx: value_desc, Mult:number, Offset:number, Type: layout, Max_offset:number)
+    .decl object_candidate(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
     .output object_candidate
 
     // detect loop for array recongnition
@@ -546,7 +549,7 @@ struct_recovery.point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_
     struct_recovery.value_type([EA, Mem_base, Offset, Value_type], "ptr").
 
 struct_recovery.array_desc(Base, Offset_res, [nil, [0, Size, Type]], Len):-
-    struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]),
+    struct_recovery.pattern_tape(Base, _, _, Offset_res, [nil, [0, Array_size, "array"]]),
     struct_recovery.src_for_address(Calc),
     struct_recovery.resolve_calc(Calc, Base, _, _, _),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
@@ -554,21 +557,28 @@ struct_recovery.array_desc(Base, Offset_res, [nil, [0, Size, Type]], Len):-
     Len = as(Array_size / as(Size, unsigned), unsigned).
 
 struct_recovery.array_desc(Base, Offset_res, [nil, [0, Size, Type]], Len):-
-    struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]),
+    struct_recovery.pattern_tape(Base, _, _, Offset_res, [nil, [0, Array_size, "array"]]),
     struct_recovery.resolve_calc(Calc, Base, _, _, _),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, Loc_type], Size, _, Calc),
     struct_recovery.value_type([EA, Mem_base, Offset, Loc_type], Type),
     Len = as(Array_size / as(Size, unsigned), unsigned),
     (Loc_type="global";Loc_type="global_bias").
 
-struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Size, Type]]):-
+struct_recovery.pattern_tape(Base, nil, 1, Offset_res, [nil, [0, Size, Type]]):-
     struct_recovery.src_for_address(Calc),
     struct_recovery.resolve_calc(Calc, Base, nil, 1, Offset_calc),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
     Offset_res=Offset_calc +Offset,
     struct_recovery.value_type([EA, Mem_base, Offset, "mem"], Type).
 
-struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):-
+struct_recovery.access_handle(Base, nil, 1, Offset_res, Calc):-
+    struct_recovery.src_for_address(Calc),
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], _, _, Calc),
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset.
+
+struct_recovery.pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Array_size, "array"]]):-
     struct_recovery.src_for_address(Calc),
     struct_recovery.resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
     struct_recovery.loop_detected(Start, End, Steps, Idx),
@@ -578,13 +588,27 @@ struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):
     Array_size = as(Elems, unsigned) * as(Mult, unsigned) + Size,
     struct_recovery.value_type([EA, Mem_base, Offset, "mem"], _).
 
-struct_recovery.pattern_tape(Base, 0, [nil, [0, Size, Type]]):-
+struct_recovery.access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    struct_recovery.src_for_address(Calc),
+    struct_recovery.resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    struct_recovery.loop_detected(Start, _, _, Idx),
+    struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], _, _, Calc),
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset + Mult * Start.
+
+struct_recovery.pattern_tape(Base, nil, 1, 0, [nil, [0, Size, Type]]):-
     struct_recovery.value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
     struct_recovery.resolve_calc(Calc, Base, nil, 1, 0),
     struct_recovery.value_type([EA, Reg, Address, GType], Type),
     (GType="global";GType="global_bias").
 
-struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):-
+struct_recovery.access_handle(Base, nil, 1, 0, Calc):-
+    struct_recovery.value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, 0),
+    (GType="global";GType="global_bias").
+
+struct_recovery.pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Array_size, "array"]]):-
     struct_recovery.value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
     struct_recovery.resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
     struct_recovery.loop_detected(Start, End, Steps, Idx),
@@ -594,24 +618,38 @@ struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):
     struct_recovery.value_type([EA, Reg, Address, GType], _),
     (GType="global";GType="global_bias").
 
-struct_recovery.merged_tape([EA, Reg, B_offset, BType], Offset, [nil, [0, Size, Type]]):-
-    struct_recovery.pattern_tape([EA, Reg, B_offset, BType], Offset, [nil, [0, Size, Type]]),
+struct_recovery.access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    struct_recovery.value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    struct_recovery.resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    struct_recovery.loop_detected(Start, _, _, Idx),
+    Offset_res=Offset_calc + Mult * Start,
+    (GType="global";GType="global_bias").
+
+struct_recovery.merged_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]):-
+    struct_recovery.pattern_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]),
     !arch.frame_pointer(Reg),
     !arch.stack_pointer(Reg).
     
-struct_recovery.merged_tape(Id, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
-    struct_recovery.merged_tape(Id, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
-    struct_recovery.pattern_tape(Id, Offset2, [nil, [0, Size2, Type2]]),
-    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
+struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+    struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle),
+    struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle),
+    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
     TypeOffset2 = Offset2 - Offset1.
 
-struct_recovery.object_candidate_helper(Id, Offset, [Prev, [Offset1, Size2, Type2]], Offset1):-
-    Offset = min Offset :struct_recovery.merged_tape(Id, Offset, _),
-    struct_recovery.merged_tape(Id, Offset, [Prev, [Offset1, Size2, Type2]]).
+struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    Offset = min Offset :struct_recovery.merged_tape(Id, Idx, Mult, Offset, _),
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]]).
 
-struct_recovery.object_candidate(Id, Offset, [Prev, [Offset1, Size2, Type2]]):-
-    Offset1 = max Offset1 :{struct_recovery.object_candidate_helper(Id, Offset, _, Offset1)},
-    struct_recovery.object_candidate_helper(Id, Offset, [Prev, [Offset1, Size2, Type2]], Offset1).
+struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]]),
+    struct_recovery.point_to(_, _, Id, Idx, Mult, Offset).
+
+struct_recovery.object_candidate(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]]):-
+    Offset1 = max Offset1 :{struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, _, Offset1)},
+    struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]], Offset1).
 
 struct_recovery.function_reg_arg(Caller, Callee, Arg):-
     code(EA),

@@ -62,7 +62,7 @@
     .decl value_type(Location:value_desc, Type:symbol)
     // .output value_type
     // value at Base[Offset] is pointing to Target 
-    .decl point_to(Base: value_desc, Offset:number, Target: value_desc)
+    .decl point_to(Base: value_desc, Offset:number, Target: value_desc, Idx: value_desc, Mult:number, Target_offset:number)
     .output point_to
     .decl array_desc(Base:value_desc, Offset:number, Unit:layout, Len:unsigned)
     .output array_desc
@@ -163,7 +163,7 @@ struct_recovery.value_def([EA, Reg, as(Size, number), "mem"]):-
 struct_recovery.value_def(Def):-
     struct_recovery.value_arithmetic_operation(_, Def, _, _, _, _).
 
-struct_recovery.value_arithmetic_operation(EA, [EA, Base, Offset, "mem_calc"], [EA, Base, Offset, "mem"], nil, 0, Offset_res):-
+struct_recovery.value_arithmetic_operation(EA, [EA, Base, Offset, "mem_calc"], [EA, Base, Offset, "mem"], nil, 1, Offset_res):-
     code(EA),
     instruction_get_operation(EA, Operation),
     instruction_get_dest_op(EA, Idx1, Op1),
@@ -200,7 +200,7 @@ struct_recovery.loop_detected(Start, End, Steps, Counter):-
     struct_recovery.value_root([EA, Base, Offset, Type], Src2, _),
     Src1 != Src2,
     Counter=Src1,
-    struct_recovery.resolve_calc(Src1, nil, nil, 0, Start),
+    struct_recovery.resolve_calc(Src1, nil, nil, 1, Start),
     struct_recovery.value_arithmetic_edge(Src2, Val, _, _, Unit),
     struct_recovery.value_root(Val, Src1, _),
     Steps = Unit,
@@ -214,10 +214,10 @@ struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, Root_idx, Mult, Offset
     struct_recovery.value_root(Op1, Root, _),
     struct_recovery.value_root(Op2, Root_idx, _).
 
-struct_recovery.resolve_calc([EA, Reg, 0, "reg"], [0, "NONE", Address, "global"], nil, 0, 0):-
+struct_recovery.resolve_calc([EA, Reg, 0, "reg"], [0, "NONE", Address, "global"], nil, 1, 0):-
     value_reg(EA, Reg, EA, "NONE", 0, Address, _).
 
-struct_recovery.resolve_calc([EA, Base, Address, "global"], [0, "NONE", Address, "global"], nil, 0, 0):-
+struct_recovery.resolve_calc([EA, Base, Address, "global"], [0, "NONE", Address, "global"], nil, 1, 0):-
     struct_recovery.value_def([EA, Base, Address, "global"]);
     struct_recovery.value_used([EA, Base, Address, "global"]).
 
@@ -235,18 +235,19 @@ struct_recovery.resolve_calc([EA, Base, 0, "calc"], [EA_root, Base_root, Offset_
     struct_recovery.value_root(Op1, [EA_root, Base_root, Offset_root, Type_root], _),
     Type_root != "calc".
 
-struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, nil, 0, Offset):-
-    struct_recovery.value_arithmetic_edge([EA, Base, 0, "calc"], Op1, nil, 0, Offset1),
+struct_recovery.resolve_calc([EA, Base, 0, "calc"], Root, nil, 1, Offset):-
+    struct_recovery.value_arithmetic_edge([EA, Base, 0, "calc"], Op1, nil, 1, Offset1),
     struct_recovery.value_root(Op1, [EA_root, Base_root, 0, "calc"], _),
-    struct_recovery.resolve_calc([EA_root, Base_root, 0, "calc"], Root, nil, 0, Offset2),
+    struct_recovery.resolve_calc([EA_root, Base_root, 0, "calc"], Root, nil, 1, Offset2),
+    EA!=EA_root,
     Offset=Offset1+Offset2.
     
-struct_recovery.resolve_calc([EA, Base, Offset, Type], [EA, Base, Offset, Type], nil, 0, 0):-
+struct_recovery.resolve_calc([EA, Base, Offset, Type], [EA, Base, Offset, Type], nil, 1, 0):-
     struct_recovery.value_used_for_address(_, _, _, [EA, Base, Offset, Type]),
     !struct_recovery.value_src([EA, Base, Offset, Type], EA, "global_ptr"),
     Type!="calc",Type!="global",Type!="global_bias".
 
-struct_recovery.resolve_calc([EA, Base, Offset, Type], nil, nil, 0, Immediate):-
+struct_recovery.resolve_calc([EA, Base, Offset, Type], nil, nil, 1, Immediate):-
     struct_recovery.value_src([EA, Base, Offset, Type], EA, "immediate"),
     arch.mov(EA),
     code(EA),
@@ -524,23 +525,23 @@ struct_recovery.value_type([EA, Mem_base, Offset, Value_type], "data"):-
     (Value_type="mem";Value_type="global";Value_type="global_bias"),
     !struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], "ptr").
 
-struct_recovery.point_to(Base, Offset_res, Root_base):-
+struct_recovery.point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
     struct_recovery.src_for_address(Calc),
-    struct_recovery.resolve_calc(Calc, Base, nil, _, Offset_calc),
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, Offset_calc),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
-    struct_recovery.resolve_calc(Root, Root_base, _, _, _),
+    struct_recovery.resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
     Offset_res=Offset + Offset_calc,
     struct_recovery.value_type([EA, Mem_base, Offset, Value_type], "ptr").
 
-struct_recovery.point_to(Base, Offset_res, Root_base):-
+struct_recovery.point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
     Calc=[EA_base, Reg_base, Offset_base, Type_base],
     (Type_base="global";Type_base="global_bias"),
     EA_base=EA_base, Reg_base=Reg_base, Offset_base=Offset_base,
-    struct_recovery.resolve_calc(Calc, Base, _, _, Offset_calc),
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, Offset_calc),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
-    struct_recovery.resolve_calc(Root, Root_base, _, _, _),
+    struct_recovery.resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
     Offset_res=Offset_calc,
     struct_recovery.value_type([EA, Mem_base, Offset, Value_type], "ptr").
 
@@ -562,7 +563,7 @@ struct_recovery.array_desc(Base, Offset_res, [nil, [0, Size, Type]], Len):-
 
 struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Size, Type]]):-
     struct_recovery.src_for_address(Calc),
-    struct_recovery.resolve_calc(Calc, Base, nil, _, Offset_calc),
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, Offset_calc),
     struct_recovery.value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
     Offset_res=Offset_calc +Offset,
     struct_recovery.value_type([EA, Mem_base, Offset, "mem"], Type).
@@ -579,7 +580,7 @@ struct_recovery.pattern_tape(Base, Offset_res, [nil, [0, Array_size, "array"]]):
 
 struct_recovery.pattern_tape(Base, 0, [nil, [0, Size, Type]]):-
     struct_recovery.value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
-    struct_recovery.resolve_calc(Calc, Base, nil, 0, 0),
+    struct_recovery.resolve_calc(Calc, Base, nil, 1, 0),
     struct_recovery.value_type([EA, Reg, Address, GType], Type),
     (GType="global";GType="global_bias").
 
@@ -623,3 +624,4 @@ struct_recovery.function_reg_arg(Caller, Callee, Arg):-
     !arch.frame_pointer(Base),
     Arg=[EA_def, Base, Offset, "reg"].
 // TODO: interprocedural global def used
+// TODO: solve adjacent global objects

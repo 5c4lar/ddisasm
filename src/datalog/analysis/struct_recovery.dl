@@ -73,14 +73,13 @@
     .decl access_handle(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Handle:value_desc)
     .output access_handle
     // Merge pattern defined for the same object
-    .decl merged_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
+    .decl merged_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout, Last_elem:number)
     .output merged_tape
     // Select the best object candidate from merged_tape.
     .decl object_candidate_helper(Src:value_desc, Idx: value_desc, Mult:number, Offset:number, Type: layout, Max_offset:number)
+    .output object_candidate_helper
     .decl object_candidate(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
     .output object_candidate
-
-    .decl is_global(Src:value_desc)
 
     // detect loop for array recongnition
     .decl loop_detected(Start:number, End:number, Steps:number, Counter:value_desc)
@@ -744,66 +743,54 @@ struct_recovery.access_handle(Base, Idx, Mult, Offset_res, Calc):-
     EA=EA, Mem_base=Mem_base,
     Offset_res=Offset_calc +Offset.
 
-struct_recovery.is_global([EA, Base, Offset, Type]):-
-    struct_recovery.resolve_calc(_, [EA, Base, Offset, Type], _, _, _),
-    Type = "global".
-
-struct_recovery.merged_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]):-
+struct_recovery.merged_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]], Offset):-
     struct_recovery.pattern_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]),
     !arch.frame_pointer(Reg),
     !arch.stack_pointer(Reg).
     
-struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
-    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
     struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
     struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle),
     struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle),
-    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
-    TypeOffset2 = Offset2 - Offset1.
+    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
 
-struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
-    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
+struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
     struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
     struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle1),
     struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle2),
-    !struct_recovery.is_global(Id),
+    Id != [0, "NONE", 0, "global"],
     Handle1_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle1),
     Handle2_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle2),
     Handle1_start < Handle2_start,
-    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
-    TypeOffset2 = Offset2 - Offset1.
+    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
 
-struct_recovery.merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]]):-
-    struct_recovery.merged_tape(Id, Idx1, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]]),
-    struct_recovery.pattern_tape(Id, Idx2, Mult, Offset2, [nil, [0, Size2, Type2]]),
+struct_recovery.merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    struct_recovery.merged_tape([0, "NONE", 0, "global"], Idx1, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    struct_recovery.pattern_tape([0, "NONE", 0, "global"], Idx2, Mult, Offset2, [nil, [0, Size2, Type2]]),
     struct_recovery.loop_detected(_, _, Steps, Idx1),
     struct_recovery.loop_detected(_, _, Steps, Idx2),
-    struct_recovery.is_global(Id),
     Offset1 + Mult > Offset2,
-    Offset2=min Offset2:{struct_recovery.pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Offset1 + TypeOffset1 + as(Size1, number)},
-    TypeOffset2 = Offset2 - Offset1.
-//     struct_recovery.access_handle(Id, Idx, Mult, Offset1, Handle1),
-//     struct_recovery.access_handle(Id, Idx, Mult, Offset2, Handle2),
-//     
-//     Handle1_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle1),
-//     Handle2_start = min Offset: struct_recovery.access_handle(Id, Idx, Mult, Offset, Handle2),
-//     Handle1_start < Handle2_start,
-
+    Offset2=min Offset2:{struct_recovery.pattern_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
 
 struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
-    Offset = min Offset :struct_recovery.merged_tape(Id, Idx, Mult, Offset, _),
-    !struct_recovery.is_global(Id),
-    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]]).
+    Offset = min Offset :struct_recovery.merged_tape(Id, Idx, Mult, Offset, _, _),
+    Id != [0, "NONE", 0, "global"],
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _).
+
+struct_recovery.object_candidate_helper([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    struct_recovery.merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Last_elem),
+    Offset2 = min Offset :struct_recovery.merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset, _, Last_elem).
 
 struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
-    struct_recovery.is_global(Id),
-    Offset = min Offset :{struct_recovery.merged_tape(Id, _, _, Offset, [Prev, [Offset1, Size1, Type1]]),
-    Offset + Offset1 = Upbound},
-    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]]),
-    Offset + Offset1 = Upbound.
-
-struct_recovery.object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
-    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]]),
+    struct_recovery.merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _),
     struct_recovery.point_to(_, _, Id, Idx, Mult, Offset).
 
 struct_recovery.object_candidate(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]]):-

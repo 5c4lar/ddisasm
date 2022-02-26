@@ -205,7 +205,12 @@ void ElfReader::buildSymbols()
             if(Version)
             {
                 // Construct a normalized symbol name and a version.
-                Name = Name.append("@" + *Version);
+                if (Symbol.visibility() == LIEF::ELF::ELF_SYMBOL_VISIBILITY::STV_DEFAULT)
+                    Name = Name.append("@@" + *Version);
+                else
+                    Name = Name.append("@" + *Version);
+                // std::cerr << Name << static_cast<int>(Symbol.visibility()) << std::endl;
+
             }
 
             // Rebase symbols onto their respective relocated section address.
@@ -362,7 +367,10 @@ void ElfReader::addAuxData()
                 LIEF::ELF::SymbolVersion SymbolVersion = Relocation.symbol().symbol_version();
                 if(SymbolVersion.has_auxiliary_version())
                 {
-                    SymbolName.append("@" + SymbolVersion.symbol_version_auxiliary().name());
+                    if (Relocation.symbol().visibility() == LIEF::ELF::ELF_SYMBOL_VISIBILITY::STV_DEFAULT)
+                        SymbolName.append("@@" + SymbolVersion.symbol_version_auxiliary().name());
+                    else
+                        SymbolName.append("@" + SymbolVersion.symbol_version_auxiliary().name());
                 }
             }
         }

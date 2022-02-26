@@ -38,6 +38,7 @@
 #include <souffle/SouffleInterface.h>
 
 #include <boost/filesystem.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/program_options.hpp>
 #include <gtirb/gtirb.hpp>
 #include <gtirb_pprinter/PeBinaryPrinter.hpp>
@@ -106,6 +107,48 @@ static void setStdoutToBinary()
         assert(stdout && "Failed to reopen stdout");
 #endif
     }
+}
+
+static bool loadFacts(DatalogProgram&Program, const std::string &Dir) {
+    typedef boost::tokenizer<boost::char_separator<char>> tokenizer;
+    for (const auto & entry: fs::directory_iterator(Dir)) {
+        if (entry.path().extension() == ".csv") {
+            // Souffle->insert(entry.path().stem().string() , entry.path().string());
+            auto relation_name = entry.path().stem().string();
+            // std::cerr<<"found relation stored in csv file:" << relation_name << "\n";
+            std::ifstream file(entry.path().string());
+            auto Relation = Program.get()->getRelation(relation_name);
+            std::string line;
+            std::vector<std::string> vec;
+            while (getline(file, line)) {
+                vec.clear();
+                tokenizer tok(line, boost::char_separator<char>("\n\r\t "));
+                vec.assign(tok.begin(), tok.end());
+                souffle::tuple Row(Relation);
+                for (size_t i = 0; i < Relation->getArity(); i++) {
+                    switch (*Relation->getAttrType(i))
+                    {
+                    case 's':
+                        Row << vec[i];
+                        break;
+                    case 'f':
+                        Row << static_cast<souffle::RamFloat>(std::stod(vec[i]));
+                        break;
+                    case 'i':
+                        Row << static_cast<souffle::RamSigned>(std::stoll(vec[i]));
+                        break;
+                    case 'u':
+                        Row << static_cast<souffle::RamUnsigned>(std::stoull(vec[i]));
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                Relation->insert(Row);
+            }
+        }
+    }
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -262,7 +305,9 @@ int main(int argc, char **argv)
         Module.setEntryPoint(nullptr);
 
         Souffle->insert("option", createDisasmOptions(vm));
-
+        if(vm.count("load-dir") != 0) {
+            loadFacts(*Souffle, vm["load-dir"].as<std::string>());
+        }
         fs::path DebugDir;
         if(vm.count("debug-dir") != 0)
         {

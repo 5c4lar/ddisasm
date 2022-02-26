@@ -89,7 +89,7 @@
     .output function_reg_arg
 
     .decl function_prototype(Name:symbol, Idx:unsigned, Type:symbol)
-    .input function_prototype(IO=file, filename="/root/function_prototype.csv")
+    .input function_prototype
     .decl arg_idx(Reg:symbol, Idx: unsigned)
     arg_idx("RDI", 1).
     arg_idx("RSI", 2).
@@ -634,33 +634,24 @@ struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
 
 struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    struct_recovery.value_root([EA_arg, Reg, 0, "reg"], Root, _),
     (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
-    struct_recovery.function_reg_arg(_, Callee, Arg),
-    struct_recovery.value_root(Arg, Root, _),
-    Arg = [_, Reg, 0, "reg"], 
+    code_in_refined_block(EA, Block),
+    function_inference.in_function(Block, Caller),
+    struct_recovery.function_reg_arg(Caller, Callee, [EA_arg, Reg, 0, "reg"]),
     struct_recovery.function_prototype(Function_symbol, Idx, Type),
     cfg_edge_to_symbol(Callee, Function_symbol, _),
-    struct_recovery.arg_idx(Reg, Idx).
+    struct_recovery.arg_idx(Reg, Idx),
+    Idx > 0.
 
 struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
     (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
-    struct_recovery.value_src(Root, EA, "function"),
-    code(EA),
-    direct_call(EA, Callee),
-    cfg_edge_to_symbol(Callee, Function_symbol, _),
+    struct_recovery.value_src(Root, EA_call, "function"),
+    code(EA_call),
+    direct_call(EA_call, Callee),
     struct_recovery.function_prototype(Function_symbol, 0, Type),
     cfg_edge_to_symbol(Callee, Function_symbol, _).
-
-// struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
-//     struct_recovery.value_root([EA, Mem_base, Offset, Value_type], Root, _),
-//     (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
-//     struct_recovery.function_reg_arg(_, Callee, Arg),
-//     struct_recovery.value_root(Arg, Root, _),
-//     struct_recovery.value_src(Root, _, "function"),
-//     cfg_edge_to_symbol(Callee, _, _),
-//     !struct_recovery.not_for_address(Root),
-//     Type="ptr".
 
 struct_recovery.value_type([EA, Mem_base, Offset, Value_type], Type):-
     struct_recovery.value_type_helper([EA, Mem_base, Offset, Value_type], Type).

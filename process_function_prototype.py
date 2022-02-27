@@ -14,14 +14,14 @@ args = parser.parse_args()
 def transform(type):
     if type == "DW_TAG_pointer_type":
         return "ptr"
-    else:
+    elif type != "DW_TAG_unspecified_parameters":
         return "data"
 
 def main(args):
     with open(args.input, "r") as f:
         d = json.load(f)
     data = [[i['function_name'], 0, transform(i['tag'])] for i in d]
-    data += [[i['function_name'], j['idx'], transform(j['tag'])] for i in d for j in i['parameters']]
+    data += [[i['function_name'], j['idx'], transform(j['tag'])] for i in d for j in i['parameters'] if j['tag'] != "DW_TAG_unspecified_parameters"]
     with open(args.output, "w") as f:
         writer = csv.writer(f, delimiter="\t")
         writer.writerows(data)

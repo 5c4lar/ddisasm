@@ -1,0 +1,287 @@
+// Input from former analysis
+.type address <: unsigned
+.type scc <:unsigned
+.type operand_code <: unsigned
+.type register <: symbol
+.type operand_index <: unsigned
+
+.decl block(Address:address, Size:unsigned)
+.input block
+
+.decl next_block(Block1:address,Block2:address)
+.input next_block
+///////////////////////////////////////////////////
+.decl instruction(ea:address, size:unsigned, prefix:symbol, opcode:symbol,
+          op1:operand_code, op2:operand_code, op3:operand_code, op4:operand_code,
+          immOffset:unsigned,displacementOffset:unsigned)
+.input instruction
+
+// three kinds of operators
+.decl op_regdirect(code:operand_code,register_name:register)
+.input op_regdirect
+
+.decl op_immediate(code:operand_code,offset:number)
+.input op_immediate
+
+.decl op_indirect(code:operand_code,reg1:register, reg2:register, reg3:register,
+        multiplier:number, offset:number, size_value:unsigned)
+.input op_indirect
+
+.decl op_register_bitfield(code:operand_code,register_name:register)
+.input op_register_bitfield
+
+// #include "../../datalog/arch/dl"
+// #include "../../datalog/arch/intel/arch_x86_64.dl"
+// .init arch = X86_64
+
+.decl store_operation(Operation:symbol)
+.input store_operation
+
+.decl read_only_operation(Operation:symbol)
+.input read_only_operation
+
+.decl write_only_operation(Operation:symbol)
+.input write_only_operation
+
+.decl track_register(RegName:register,RegGenericName:register)
+.input track_register
+
+/**
+This specifies the registers whose value is not kept through a function call
+according to the architecture's calling convention.
+*/
+.decl function_non_maintained_reg(Reg:register)
+.input function_non_maintained_reg
+
+.decl pc_register(Reg:register)
+.input pc_register
+
+.decl frame_pointer(Reg:register)
+.input frame_pointer
+
+.decl stack_pointer(Reg:register)
+.input stack_pointer
+
+.decl return_val_reg(Reg:register)
+.input return_val_reg
+
+/**
+Arithmetic operation on two source registers of the form Dst = Src1 + Src2 * Mult + Offset
+
+Note: Src1 and Src2 *may* be the same register.
+*/
+.decl reg_reg_arithmetic_operation(EA:address,Dst:register,Src1:register,Src2:register,Mult:number,Offset:number)
+.input reg_reg_arithmetic_operation
+
+/**
+Arithmetic operation on one source register of the form Dst = Src * Mult + Offset
+*/
+.decl reg_arithmetic_operation(EA:address,Dst:register,Src:register,Mult:number,Offset:number)
+.input reg_arithmetic_operation
+
+.decl call_operation(operation:symbol)
+.input call_operation
+
+.decl delay_slot(BranchEA:address,EA:address)
+.input delay_slot
+
+.decl pointer_size(N:unsigned) inline
+pointer_size(8).
+
+.decl cmp_operation(Operation:symbol)
+.input cmp_operation
+
+.decl conditional_operation(Operation:symbol)
+.input conditional_operation
+
+.decl one_op_write(Operation:symbol)
+.input one_op_write
+
+.decl mov(EA:address)
+.input mov
+
+.decl op_does_not_read_dest_reg(Operation:symbol)
+.input op_does_not_read_dest_reg
+
+
+///////////////////////////////////////////////////
+.decl next(n:address,m:address)
+
+next(EA,EA+Size):-
+    instruction(EA,Size,_,_,_,_,_,_,_,_).
+
+.decl code_in_refined_block(ea:address,block:address)
+.input code_in_refined_block
+
+.decl code(EA:address)
+code(EA):-
+    code_in_refined_block(EA, _).
+
+.decl may_fallthrough(o:address,d:address)
+.input may_fallthrough
+
+.decl instruction_get_operation(ea:address,operation:symbol) inline
+
+instruction_get_operation(EA,Operation):-
+    instruction(EA,_,_,Operation,_,_,_,_,_,_).
+
+.decl instruction_get_op(ea:address,index:operand_index,operator:operand_code)
+
+instruction_get_op(EA,Index,Op):-
+    instruction(EA,_,_,_,Op1,Op2,Op3,Op4,_,_),
+    (
+        Op1 != 0,
+        Op = Op1, Index = 1,
+        Op2 = Op2, Op3 = Op3, Op4 = Op4 // avoid warning
+        ;
+        Op2 != 0,
+        Op = Op2, Index = 2,
+        Op1 = Op1, Op3 = Op3, Op4 = Op4 // avoid warning
+        ;
+        Op3 != 0,
+        Op = Op3, Index = 3,
+        Op1 = Op1, Op2 = Op2, Op4 = Op4 // avoid warning
+        ;
+        Op4 != 0,
+        Op = Op4, Index = 4,
+        Op1 = Op1, Op2 = Op2, Op3 = Op3 // avoid warning
+    ).
+
+
+.decl instruction_get_dest_op(ea:address,index:operand_index,op:operand_code)
+
+instruction_get_dest_op(EA,1,Op):-
+    store_operation(Operation),
+    instruction(EA,_,_,Operation,Op,_,_,_,_,_).
+
+instruction_get_dest_op(EA,Index,Op):-
+    !store_operation(Operation),
+    instruction(EA,_,_,Operation,_,Op2,Op3,Op4,_,_),
+    !read_only_operation(Operation),
+    (
+        Op4 = 0,
+        Op3 = 0,
+        Op2 != 0,
+        Op = Op2,
+        Index = 2
+        ;
+        Op4 = 0,
+        Op3 != 0,
+        Op = Op3,
+        Index = 3,
+        Op2 = Op2 // avoid warning
+        ;
+        Op4 != 0,
+        Op = Op4,
+        Index = 4,
+        Op2 = Op2, Op3 = Op3 // avoid warning
+    ).
+
+instruction_get_dest_op(EA,1,Op):-
+    instruction(EA,_,_,Operation,Op,0,0,0,_,_),
+    one_op_write(Operation).
+
+.decl instruction_get_src_op(ea:address,Index:operand_index,op:operand_code)
+
+instruction_get_src_op(EA,2,Op):-
+    store_operation(Operation),
+    instruction(EA,_,_,Operation,_,Op,0,0,_,_).
+
+//when the dest is used as a source as well
+instruction_get_src_op(EA,Index,Op2):-
+    instruction(EA,_,_,Operation,_,Op2,_,_,_,_),Op2 != 0,
+    Index = 2,
+    !mov(EA),
+    !op_does_not_read_dest_reg(Operation),
+    !write_only_operation(Operation).
+
+instruction_get_src_op(EA,Index,Op):-
+    !store_operation(Operation),
+    (
+        instruction(EA,_,_,Operation,Op,_,_,_,_,_), Op != 0, Index = 1;
+        instruction(EA,_,_,Operation,_,Op,Op3,_,_,_), Op != 0, Op3 != 0, Index = 2;
+        instruction(EA,_,_,Operation,_,_,Op,Op4,_,_), Op != 0, Op4 != 0, Index = 3
+    ),
+    !write_only_operation(Operation).
+
+
+//////////////////////////////////////////////////////////////////////////////////
+// Operations to abstract features of instructions
+
+.decl op_indirect_contains_reg(op:operand_code,reg:register)
+
+// we ignore segment registers
+op_indirect_contains_reg(Op,Reg_uniform):-
+    op_indirect(Op,_,Reg2,_,_,_,_),
+    track_register(Reg2,Reg_uniform).
+
+op_indirect_contains_reg(Op,Reg_uniform):-
+    op_indirect(Op,_,_,Reg3,_,_,_),
+    track_register(Reg3,Reg_uniform).
+
+.decl op_regdirect_contains_reg(op:operand_code,reg:register)
+
+op_regdirect_contains_reg(Op,Reg_uniform):-
+    (
+        op_regdirect(Op,Reg)
+        ;
+        op_register_bitfield(Op,Reg)
+    ),
+    track_register(Reg,Reg_uniform).
+
+
+// The instruction at EA has operation Operation and two operands: a register Reg and an immediate Immediate
+.decl op_immediate_and_reg(EA:address,Operation:symbol,Reg:register,Imm_index:operand_index,Immediate:number)
+
+op_immediate_and_reg(EA,Operation,Reg,Imm_index,Immediate):-
+    instruction_get_operation(EA,Operation),
+    instruction_get_op(EA,Imm_index,Op),
+    op_immediate(Op,Immediate),
+    instruction_get_op(EA,_,Op2),
+    op_regdirect_contains_reg(Op2,Reg).
+
+.decl block_last_instruction(Block:address,EA:address)
+block_last_instruction(Block,EA):-
+    code_in_refined_block(EA,Block),
+    next(EA,Next),
+    !code_in_refined_block(Next,Block).
+
+.decl value_reg(EA:address,Reg:register,
+                EA_reg1:address,Reg1:register,Multiplier:number,Offset:number,steps:number)
+.input value_reg
+
+.decl is_xor_reset(EA:address)
+is_xor_reset(EA):-
+    instruction(EA,_,_,"XOR",Op1,Op2,0,0,_,_),
+    op_regdirect_contains_reg(Op1,Reg),
+    op_regdirect_contains_reg(Op2,Reg).
+
+.decl block_next(ea:address,ea_next:address)
+.input block_next
+
+.decl flow_def(EA:address,Reg:register,EA_next:address,Value:number)
+.input flow_def
+
+.decl direct_call(EA:address,Dest:address)
+.input direct_call
+
+.decl cfg_edge_to_symbol(Src:address,Symbol:symbol,Type:symbol)
+.input cfg_edge_to_symbol
+
+.decl initialized_data_segment(Begin:address,End:address)
+.input initialized_data_segment
+
+.decl in_function(Block:address,Function:address)
+.input in_function
+
+.decl block_last_def(EA:address,EA_def:address,Reg:register)
+.input block_last_def
+
+.decl last_def(EA:address,EA_def:address,Reg:register)
+.input last_def
+
+.decl def_used_return_val_reg(ea_def:address,ea_call:address,reg:register,ea_used:address,index_used:operand_index)
+.input def_used_return_val_reg
+
+.decl instruction_memory_access_size(EA:address,Op_index:operand_index,Size:unsigned)
+.input instruction_memory_access_size

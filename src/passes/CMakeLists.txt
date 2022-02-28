@@ -119,7 +119,7 @@ else()
       ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery.dl)
 endif()
 
-set(STRUCT_RECOVERY_DATALOG_SOURCES datalog/struct_recovery.dl)
+set(STRUCT_RECOVERY_DATALOG_SOURCES datalog/struct_recovery.dl datalog/struct_recovery_input.dl)
 
 set(STRUCT_RECOVERY_CPP
     "${CMAKE_BINARY_DIR}/src/passes/souffle_struct_recovery.cpp")

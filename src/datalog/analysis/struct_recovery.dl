@@ -6,9 +6,9 @@
 
     .decl local_next(EA:address, EA_next:address)
     .decl value_def(Val: value_desc)
-    // .output value_def
+    .output value_def
     .decl value_used(Val: value_desc)
-    // .output value_used
+    .output value_used
     .decl value_must_def(Val:value_desc)
     // loc defined intrax
     .decl loc_defined_in_block(EA:address, Loc: loc_desc)
@@ -31,7 +31,7 @@
     .decl used_value(Val:value_desc)
     // edges connecting values
     .decl value_edge(Src:value_desc, Dst:value_desc, Type:symbol)
-    // .output value_edge
+    .output value_edge
 
     .decl value_arithmetic_operation(EA:address, Dst:value_desc, Op1:value_desc, Op2:value_desc, Mult:number, Offset:number)
     // .output value_arithmetic_operation

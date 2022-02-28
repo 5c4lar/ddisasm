@@ -22,16 +22,57 @@ public:
         RelationDir = Path;
     };
 
-    void loadRelations(souffle::SouffleProgram* P, std::string Path)
+    void loadRelations(souffle::SouffleProgram* P, souffle::SouffleProgram* Main)
     {
-        P->loadAll(Path);
+        auto InputRelations = P->getInputRelations();
+        for (auto Relation: InputRelations) {
+            souffle::Relation *LoadedRelation;
+            auto Name = Relation->getName();
+            if ((LoadedRelation = Main->getRelation(Name)) ||
+                (LoadedRelation = Main->getRelation(std::string("arch.") + Name)) ||
+                (LoadedRelation = Main->getRelation(std::string("function_inference.") + Name))) {
+                for (auto tuple: *LoadedRelation)
+                {
+                    souffle::tuple Row(Relation);
+                    std::string str;
+                    souffle::RamFloat ramFloat;
+                    souffle::RamSigned ramSigned;
+                    souffle::RamUnsigned ramUnsigned;
+                    for (size_t i = 0; i < Relation->getArity(); i++) {
+                        switch (*(Relation->getAttrType(i)))
+                        {
+                        case 's':
+                            tuple >> str;
+                            Row << str;
+                            break;
+                        case 'f':
+                            tuple >> ramFloat;
+                            Row << ramFloat;
+                            break;
+                        case 'i':
+                            tuple >> ramSigned;
+                            Row << ramSigned;
+                            break;
+                        case 'u':
+                            tuple >> ramUnsigned;
+                            Row << ramUnsigned;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                    Relation->insert(Row);
+                }
+            } else {
+                continue;
+            }
+        }
     }
 
-    void computeStructs(gtirb::Context& C, gtirb::Module& M, unsigned int NThreads);
+    void computeStructs(unsigned int NThreads, souffle::SouffleProgram* Program, std::string FactsDir);
 
 private:
     std::optional<std::string> RelationDir;
     std::optional<std::string> DebugDir;
-    void updateStructs(gtirb::Context& C, gtirb::Module& M, souffle::SouffleProgram* P);
 };
 #endif // STRUCT_RECOVERY_PASS_H_

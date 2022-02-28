@@ -1,0 +1,832 @@
+#include "struct_recovery_input.dl"
+///////////////////////////////////////////////////
+
+.type type_description = [Offset:number, Size:unsigned, Type:symbol]
+.type layout = [Prev:layout, Description:type_description]
+.type value_desc = [EA:address, Base:register, Offset:number, Type:symbol]
+.type loc_desc = [Base:register, Offset:number, Type:symbol]
+
+.decl local_next(EA:address, EA_next:address)
+.decl value_def(Val: value_desc)
+.output value_def
+.decl value_used(Val: value_desc)
+.output value_used
+.decl value_must_def(Val:value_desc)
+// loc defined intrax
+.decl loc_defined_in_block(EA:address, Loc: loc_desc)
+// .output loc_defined_in_block
+// def at block level
+.decl loc_defined_in(Block:address, Loc: loc_desc)
+// .output loc_defined_in
+.decl value_used_in_block(Block:address, Val:value_desc)
+.decl value_block_last_def(EA:address, Val:value_desc)
+.output value_block_last_def
+.decl value_last_def(Block:address, Val:value_desc)
+// .output value_last_def
+
+// value def_used intraprocedural
+.decl value_def_used(Def:value_desc, Used:value_desc, Type:symbol)
+.output value_def_used
+
+.decl def_usable_type(Type:symbol, Type1:symbol)
+.decl defined_value(Val:value_desc)
+.decl used_value(Val:value_desc)
+// edges connecting values
+.decl value_edge(Src:value_desc, Dst:value_desc, Type:symbol)
+.output value_edge
+
+.decl value_arithmetic_operation(EA:address, Dst:value_desc, Op1:value_desc, Op2:value_desc, Mult:number, Offset:number)
+// .output value_arithmetic_operation
+// calculate relative addresses, Dst = Op1 + Op2 * Mult + Offset
+.decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Mult:number, Offset:number)
+.output value_arithmetic_edge
+.decl resolve_calc(Calc: value_desc, Src: value_desc, Idx:value_desc, Mult:number, Offset:number)
+.output resolve_calc
+
+// where values are from
+.decl value_src(Src: value_desc, Ref: address, From:symbol)
+// .output value_src
+// edges from value to source
+.decl value_root(Val: value_desc, Root: value_desc, Type:symbol)
+.output value_root
+
+// locate sources for addresses, i.e. pointers.
+.decl src_for_address(Src: value_desc)
+.decl not_for_address(Val:value_desc)
+.output src_for_address
+// Mem is accessed with Size and source of the base pointer is Base_value
+.decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Base_value: value_desc)
+.output value_used_for_address
+
+.decl value_type_helper(Location:value_desc, Type:symbol)
+// .output value_type_helper
+// value_type of Location, "ptr" or "data"
+.decl value_type(Location:value_desc, Type:symbol)
+.output value_type
+// value at Base[Offset] is pointing to Target 
+.decl point_to(Base: value_desc, Offset:number, Target: value_desc, Idx: value_desc, Mult:number, Target_offset:number)
+.output point_to
+.decl array_desc(Base:value_desc, Offset:number, Unit:layout, Len:number, Unit_size:number)
+.output array_desc
+
+// Combine all access pattern originate from the pointer Src
+.decl pattern_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
+.output pattern_tape
+.decl access_handle(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Handle:value_desc)
+.output access_handle
+// Merge pattern defined for the same object
+.decl merged_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout, Last_elem:number)
+.output merged_tape
+// Select the best object candidate from merged_tape.
+.decl object_candidate_helper(Src:value_desc, Idx: value_desc, Mult:number, Offset:number, Type: layout, Max_offset:number)
+.output object_candidate_helper
+.decl object_candidate(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
+.output object_candidate
+
+// detect loop for array recongnition
+.decl loop_detected(Start:number, End:number, Steps:number, Counter:value_desc)
+.output loop_detected
+// detect function args
+.decl function_reg_arg(Caller:address, Callee:address, Arg:value_desc)
+.output function_reg_arg
+
+.decl function_prototype(Name:symbol, Idx:unsigned, Type:symbol)
+.input function_prototype
+.decl arg_idx(Reg:symbol, Idx: unsigned)
+arg_idx("RDI", 1).
+arg_idx("RSI", 2).
+arg_idx("RDX", 3).
+arg_idx("RCX", 4).
+arg_idx("R8", 5).
+arg_idx("R9", 6).
+
+local_next(EA, EA_next):-
+    code_in_refined_block(EA,Block),
+    may_fallthrough(EA,EA_next),
+    code_in_refined_block(EA_next,Block).
+
+def_usable_type(Type, Type1):-
+    (Type="reg";Type="calc"),
+    (Type1="reg";Type1="base";Type1="idx").
+
+def_usable_type("mem", "mem").
+def_usable_type("mem_calc", "mem").
+// def_usable_type("mem_bias", "mem_bias").
+
+def_usable_type("global", "global").
+
+value_def([EA, Base, Offset, "mem"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,"NONE",_,Offset,_),
+    !pc_register(Base).
+
+value_def([EA, Base, Offset, "mem_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,Idx,_,Offset,_),
+    Idx != "NONE",
+    !pc_register(Base).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    !reg_reg_arithmetic_operation(EA, Reg, _, _, _, _),
+    !reg_arithmetic_operation(EA,Reg,_,_,_),
+    instruction_get_operation(EA,Operation),
+    Operation != "LEA",
+    instruction_get_dest_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg).
+
+value_def([EA, Reg, 0, "calc"]):-
+    code(EA),
+    (reg_arithmetic_operation(EA,Reg,_,_,_);
+    reg_reg_arithmetic_operation(EA,Reg,_,_,_,_);
+    instruction_get_operation(EA,Operation),
+    Operation = "LEA",
+    instruction_get_dest_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg)).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(EA,Operation),
+    call_operation(Operation),
+    !delay_slot(EA,_),
+    function_non_maintained_reg(Reg).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(Call,Operation),
+    call_operation(Operation),
+    delay_slot(Call,EA),
+    function_non_maintained_reg(Reg).
+
+value_def([EA, Reg, 0, "calc"]):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    (Operation="PUSH";Operation="POP"),
+    stack_pointer(Reg).
+
+value_def([EA, Base, Address, "global"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE",Base,"NONE",_,Offset,_),
+    pc_register(Base),
+    next(EA, PC),
+    Address = as(Offset, number) + as(PC, number).
+
+value_def([EA, Idx, Offset, "global_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
+
+value_def([EA, Reg, as(Size, number), "mem"]):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    Operation="PUSH",
+    pointer_size(Size),
+    stack_pointer(Reg).
+
+value_def(Def):-
+    value_arithmetic_operation(_, Def, _, _, _, _).
+
+value_arithmetic_operation(EA, [EA, Base, Offset, "mem_calc"], [EA, Base, Offset, "mem"], nil, 1, Offset_res):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    instruction_get_dest_op(EA, Idx1, Op1),
+    instruction_get_src_op(EA, Idx1, Op1),
+    instruction_get_src_op(EA, Idx2, Op2),
+    Idx2 != Idx1,
+    op_indirect(Op1,"NONE",Base,"NONE",_,Offset,_),
+    op_immediate(Op2, Immediate),
+    (Operation="ADD",Offset_res=as(Immediate, number); Operation="SUB",Offset_res=-as(Immediate, number)).
+    
+value_arithmetic_edge([EA, Reg, 0, "calc"], [EA, Reg1, 0, "reg"], nil, 1, Offset):-
+    code(EA),
+    reg_arithmetic_operation(EA, Reg, Reg1, 1, Offset).
+
+value_arithmetic_edge([EA, Reg, 0, "calc"], nil, [EA, Reg1, 0, Type], Mult, Offset):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    (Operation != "LEA", Type="reg";
+    Operation = "LEA", Type="idx"),
+    reg_arithmetic_operation(EA, Reg, Reg1, Mult, Offset),
+    Mult != 1.
+
+value_arithmetic_edge([EA, Reg1, 0, "calc"], [EA, Reg1, 0, "reg"], [EA, Reg2, 0, Type], Mult, Offset):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    (Operation != "LEA", Type="reg";
+    Operation = "LEA", Type="idx"),
+    reg_reg_arithmetic_operation(EA, Reg1, Reg1, Reg2, Mult, Offset).
+  
+value_arithmetic_edge([EA, Reg, 0, "calc"], [EA, Base, 0, "base"], [EA, Idx, 0, "idx"], Mult, Offset):-
+    (value_def([EA, Reg, _, "mem_bias"]);
+    value_used([EA, Reg, _, "mem_bias"])),
+    mov(EA),
+    code(EA),
+    instruction_get_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,Idx,Mult,Offset,_).
+
+value_arithmetic_edge([EA, Reg, 0, "calc"], [EA, Idx, 0, "idx"], [EA, Base, 0, "base"], 1, Offset):-
+    (value_def([EA, Reg, _, "mem_bias"]);
+    value_used([EA, Reg, _, "mem_bias"])),
+    mov(EA),
+    code(EA),
+    instruction_get_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,Idx,1,Offset,_).
+  
+value_arithmetic_edge(Dst, Src, nil, Mult, Offset):-
+    value_arithmetic_operation(_, Dst, Src, nil, Mult, Offset).
+
+loop_detected(Start, End, Steps, Counter):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    cmp_operation(Operation),
+    code_in_refined_block(EA, Block),
+    block_last_instruction(Block, Block_end),
+    instruction_get_op(EA,Idx1,Op1),
+    instruction_get_op(EA,Idx2,Op2),
+    Idx1 != Idx2,
+    op_indirect(Op1,"NONE",Base,"NONE",_,Offset,_),
+    op_immediate(Op2, End_imm),
+    value_root([EA, Base, Offset, Type], Src1, _),
+    value_root([EA, Base, Offset, Type], Src2, _),
+    Src1 != Src2,
+    Counter=Src1,
+    resolve_calc(Src1, nil, nil, 1, Start),
+    value_arithmetic_edge(Src2, Val, _, _, Unit),
+    value_root(Val, Src1, _),
+    Steps = Unit,
+    instruction_get_operation(Block_end, Operation_jmp),
+    (Operation_jmp="JLE",
+    (End = End_imm + 1, Steps > 0;End = End_imm,Steps < 0)).
+
+resolve_calc([EA, Reg, 0, "calc"], [0, "NONE", 0, "global"], nil, 1, Address):-
+    value_reg(EA, Reg, EA, "NONE", 0, Address, _).
+
+resolve_calc([EA, Base, Address, "global"], [0, "NONE", 0, "global"], nil, 1, Address):-
+    value_def([EA, Base, Address, "global"]);
+    value_used([EA, Base, Address, "global"]).
+
+resolve_calc([EA, Idx, Address, "global_bias"], [0, "NONE", 0, "global"], Root_idx, Mult, Address):-
+    (value_def([EA, Idx, Address, "global_bias"]),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,Mult,_,_);
+    value_used([EA, Idx, Address, "global_bias"]),
+    instruction_get_src_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,Mult,_,_)),
+    value_root([EA, Idx, 0, "idx"], Root_idx, _).
+
+// resolve to root
+resolve_calc([EA, Base, 0, "calc"], Root, Idx, Mult, Offset):-
+    value_arithmetic_edge([EA, Base, 0, "calc"], Op1, Op2, Mult, Offset),
+    value_root(Op1, Root, _),
+    value_root(Op2, Idx , _),
+    ((Root = [EA_root, Base_root, Offset_root, Type_root],
+    EA_root=EA_root, Base_root=Base_root, Offset_root=Offset_root,
+    Type_root != "calc");
+    Root = nil),
+    ((Idx = [EA_idx, Base_idx, Offset_idx, Type_idx],
+    EA_idx=EA_idx, Base_idx=Base_idx, Offset_idx=Offset_idx,
+    Type_idx != "calc", Type_idx != "mem_calc");
+    Idx = nil).
+
+// resolve idx
+resolve_calc([EA, Base, 0, "calc"], Root, Idx, Mult_res, Offset_res):-
+    value_arithmetic_edge([EA, Base, 0, "calc"], Op1, Op2, Mult, Offset),
+    value_root(Op1, Root, _),
+    value_root(Op2, [EA_idx, Base_idx, 0, "calc"], _),
+    ((Root = [EA_root, Base_root, Offset_root, Type_root],
+    EA_root=EA_root, Base_root=Base_root, Offset_root=Offset_root,
+    Type_root != "calc");
+    Root = nil),
+    EA!=EA_idx,
+    resolve_calc([EA_idx, Base_idx, 0, "calc"], nil, Idx, Mult_idx, Offset_idx),
+    Mult_res = Mult * Mult_idx,
+    Offset_res = Offset + Mult * Offset_idx.
+
+// resolve base
+resolve_calc([EA, Base, 0, "calc"], Root, Idx, Mult, Offset):-
+    value_arithmetic_edge([EA, Base, 0, "calc"], Op1, Op2, Mult, Offset1),
+    value_root(Op1, [EA_root, Base_root, Offset_root, "calc"], _),
+    value_root(Op2, Idx, _),
+    ((Idx = [EA_idx, Base_idx, Offset_idx, Type_idx],
+    EA_idx=EA_idx, Base_idx=Base_idx, Offset_idx=Offset_idx,
+    Type_idx != "calc", Type_idx != "mem_calc");
+    Idx = nil),
+    resolve_calc([EA_root, Base_root, Offset_root, "calc"], Root, nil, 1, Offset2),
+    EA!=EA_root,
+    Offset=Offset1+Offset2.
+
+// resolve both
+resolve_calc([EA, Base, 0, "calc"], Root, Idx, Mult_res, Offset_res):-
+    value_arithmetic_edge([EA, Base, 0, "calc"], Op1, Op2, Mult, Offset1),
+    value_root(Op1, [EA_root, Base_root, Offset_root, "calc"], _),
+    value_root(Op2, [EA_idx, Base_idx, Offset_idx, "calc"], _),
+    resolve_calc([EA_root, Base_root, Offset_root, "calc"], Root, nil, 1, Offset2),
+    resolve_calc([EA_idx, Base_idx, Offset_idx, "calc"], nil, Idx, Mult_idx, Offset3),
+    EA!=EA_root,
+    EA!=EA_idx,
+    Mult_res = Mult * Mult_idx,
+    Offset=Offset1+Offset2,
+    Offset_res = Offset + Mult * Offset3.
+
+resolve_calc([EA, Base, Offset, Type], [EA, Base, Offset, Type], nil, 1, 0):-
+    value_used_for_address(_, _, _, [EA, Base, Offset, Type]),
+    !value_src([EA, Base, Offset, Type], EA, "global_ptr"),
+    Type!="calc",Type!="global",Type!="global_bias".
+
+resolve_calc([EA, Base, Offset, Type], nil, nil, 1, Immediate):-
+    value_src([EA, Base, Offset, Type], EA, "immediate"),
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_immediate(SrcOp, Immediate).
+
+value_must_def([EA, Base, Offset, Type]):-
+    code(EA),
+    value_def([EA, Base, Offset, Type]),
+    instruction_get_operation(EA, Op),
+    !conditional_operation(Op).
+
+value_used([EA, Base, Offset, "mem"]):-
+    instruction_get_operation(EA, Operation),
+    Operation!="LEA",
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_),
+    !pc_register(Base).
+
+value_used([EA, Base, Offset, "mem_bias"]):-
+    instruction_get_operation(EA, Operation),
+    Operation!="LEA",
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,Idx,_,Offset,_),
+    Idx != "NONE",
+    !pc_register(Base).
+
+value_used([EA, Base, Address, "global"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_),
+    pc_register(Base),
+    next(EA, PC),
+    Address = as(Offset, number) + as(PC, number).
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_src_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg),
+    !is_xor_reset(EA).
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    (reg_arithmetic_operation(EA,Reg,Reg,_,_);
+    reg_reg_arithmetic_operation(EA,Reg,Reg,_,_,_)).
+
+value_used([EA, Reg, 0, "base"]):-
+    code(EA),
+    instruction_get_op(EA,_,Op),
+    op_indirect(Op,_,Reg,_,_,_,_),
+    Reg != "NONE".
+
+value_used([EA, Reg, 0, "idx"]):-
+    code(EA),
+    instruction_get_op(EA,_,Op),
+    op_indirect(Op,_,_,Reg,_,_,_),
+    Reg != "NONE".
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(Call,Operation),
+    call_operation(Operation),
+    delay_slot(Call,EA),
+    function_non_maintained_reg(Reg).
+
+value_used([EA, Idx, Offset, "global_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
+
+loc_defined_in(Block, [Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type1]),
+    code_in_refined_block(EA, Block),
+    def_usable_type(Type1, Type).
+
+loc_defined_in_block(EA, [Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]).
+
+loc_defined_in_block(EA, [Base, Offset, Type1]):-
+    value_block_last_def(EA, [EA1, Base, Offset, Type]),
+    value_def([EA1, Base, Offset, Type]),
+    value_used([EA, Base, Offset, _]),
+    def_usable_type(Type, Type1).
+
+value_used_in_block(Block, [EA, Base, Offset, Type]):-
+    value_used([EA, Base, Offset, Type]),
+    code_in_refined_block(EA, Block).
+
+value_block_last_def(EA_next, [EA, Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]),
+    local_next(EA, EA_next).
+
+value_block_last_def(EA_next, [EA_def, Base, Offset, Type]):-
+    value_block_last_def(EA, [EA_def, Base, Offset, Type]),
+    !value_must_def([EA, Base, Offset, Type]),
+    !value_def([EA, Base, Offset, "calc"]),
+    !value_def([EA, Base, Offset, "reg"]),
+    local_next(EA, EA_next).
+
+value_last_def(Block, [EA, Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]),
+    block_next(EA, Block),
+    !flow_def(EA, Base, Block, _).
+
+// flow from def block to next block
+value_last_def(Block, [EA, Base, Offset, Type]):-
+    value_block_last_def(Block_end, [EA, Base, Offset, Type]),
+    !value_must_def([Block_end, Base, Offset, Type]),
+    !value_def([Block_end, Base, Offset, "calc"]),
+    !value_def([Block_end, Base, Offset, "reg"]),
+    block_next(Block_end, Block),
+    !flow_def(Block_end, Base, Block, _).
+
+// flow through another block
+value_last_def(Block_next, [EA, Base, Offset, Type]):-
+    value_last_def(Block, [EA, Base, Offset, Type]),
+    !loc_defined_in(Block, [Base, Offset, Type]),
+    block_last_instruction(Block, Block_end),
+    block_next(Block_end, Block_next),
+    !flow_def(Block_end, Base, Block, _).
+
+// flow def
+value_last_def(Block_next, [Block_end, Reg, 0, "reg"]):-
+    flow_def(Block_end,Reg,Block_next,_).
+
+value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "intra_block"):-
+    value_used([EA, Base, Offset, Type1]),
+    value_block_last_def(EA, [EA_def, Base, Offset, Type]),
+    def_usable_type(Type, Type1).
+
+value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "inter_block"):-
+    value_used([EA, Base, Offset, Type1]),
+    code_in_refined_block(EA, Block),
+    value_last_def(Block, [EA_def, Base, Offset, Type]),
+    !loc_defined_in_block(EA, [Base, Offset, Type1]),
+    def_usable_type(Type, Type1).
+
+defined_value(Val):-
+    value_def_used(_, Val, _).
+
+used_value(Val):-
+    value_def_used(Val, _, _).
+
+value_src([EA_call, Reg, 0, "reg"], EA_call, "function"):-
+    direct_call(EA_call, Callee),
+    return_val_reg(Reg),
+    cfg_edge_to_symbol(Callee, _, _).
+
+value_src([EA, Reg, 0, "calc"], EA, "calc"):-
+    value_def([EA, Reg, 0, "calc"]).
+
+value_src([EA, Base, Offset, "mem_calc"], EA, "mem_calc"):-
+    value_def([EA, Base, Offset, "mem_calc"]).
+
+value_src([EA, Reg, 0, "reg"], EA, "global_ptr"):-
+    value_reg(EA, Reg, EA, "NONE", 0, _, _).
+
+value_src([EA, Base, Offset, Type], EA, "immediate"):-
+    value_def([EA, Base, Offset, Type]),
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_immediate(SrcOp, _).
+
+value_src([EA, Base, Address, "global"], EA, "global"):-
+    value_used([EA, Base, Address, "global"]),
+    initialized_data_segment(Begin, End),
+    as(Address, address) >= Begin,
+    as(Address, address) < End.
+
+value_src([Function, Reg, 0, "reg"], EA, "stack"):-
+    code_in_refined_block(EA, EA_block),
+    in_function(EA_block, Function),
+    value_def([EA, Reg, 0, "reg"]),
+    frame_pointer(Reg).
+
+value_edge([EA, Base_src, Offset_src, Type_src], [EA, Base_dst, Offset_dst, Type_dst], "mov"):-
+    mov(EA),
+    value_def([EA, Base_dst, Offset_dst, Type_dst]),
+    value_used([EA, Base_src, Offset_src, Type_src]),
+    (Type_src="reg";Type_src="mem";Type_src="global";Type_src="global_bias").
+
+// Reg args
+value_edge([EA_def,Reg,0,Type], [EA,Reg,0,Type], "caller"):-
+    value_used([EA,Reg,0,Type]),
+    !pc_register(Reg),
+    !stack_pointer(Reg),
+    !frame_pointer(Reg),
+    code_in_refined_block(EA,Block),
+    in_function(Block, Function),
+    !defined_value([EA, Reg, 0, Type]),
+    direct_call(EA_call, Function),
+    (Type="reg";Type="base";Type="idx"),
+    (
+        block_last_def(EA_call,EA_def,Reg)
+        ;
+        !block_last_def(EA_call,_,Reg),
+        code_in_refined_block(EA_call, EA_call_block),
+        last_def(EA_call_block,EA_def,Reg)
+    ).
+
+value_edge([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type], "callee"):-
+    def_used_return_val_reg(EA_def, _, Reg, EA_used, _),
+    value_used([EA_used, Reg, 0, Type]).
+    
+
+// def value root for src and its ref.
+value_root([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type], "self"):-
+    value_src([EA_def, Base, Offset, Type], EA_ref, _),
+    value_used([EA_ref, Base, Offset, Type1]),
+    (Type1=Type;EA_ref!=EA_def).
+
+// def value root for immediate and calc
+value_root([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type], "value_def"):-
+    value_src([EA_def, Base, Offset, Type], EA_ref, _),
+    value_def([EA_ref, Base, Offset, Type]).
+
+// passed by def_used
+value_root(Used, Root, "def_used"):-
+    value_root(Def, Root, _),
+    value_def_used(Def, Used, _).
+
+// passed by value_edge
+value_root(Dst, Root, "value_edge"):-
+    value_root(Src, Root, _),
+    value_edge(Src, Dst, _).
+
+// passed by global mem
+value_root([EA, Idx, Address, Type], Root, "global"):-
+    value_root([_, _, Address, Type], Root, _),
+    value_used([EA, Idx, Address, Type]),
+    (Type="global";Type="global_bias").
+
+// null
+value_root(nil, nil, "null").
+
+value_used_for_address([EA, Base, Offset, "mem"], Size, Direction, Value):-
+    src_for_address(Root),
+    (value_root(Value, Root, _);Value=Root),
+    (value_used([EA, Base, Offset, "mem"]),Direction="load";
+    value_def([EA, Base, Offset, "mem"]),Direction="store"),
+    value_root([EA, Base, 0, "base"], Root, _),
+    instruction_memory_access_size(EA, _, Size).
+    
+value_used_for_address([EA, Base, Offset, "mem_bias"], Size, Direction, Value):-
+    src_for_address(Root),
+    (value_root(Value, Root, _);Value=Root),
+    (value_used([EA, Base, Offset, "mem_bias"]),Direction="load";
+    value_def([EA, Base, Offset, "mem_bias"]),Direction="store"),
+    value_root([EA, _, 0, Type], Root, _),
+    (Type = "idx"; Type = "base"),
+    instruction_memory_access_size(EA, _, Size).
+
+value_used_for_address([EA, Base, Offset, Type], Size, Direction, [EA, Base, Offset, Type]):-
+    (value_used([EA, Base, Offset, Type]),Direction="load";
+    value_def([EA, Base, Offset, Type]),Direction="store"),
+    instruction_memory_access_size(EA, _, Size),
+    (Type="global";Type="global_bias").
+
+src_for_address(Src):-
+    value_src(Src, _, _),
+    value_root([_, _, _, "base"], Src, _).
+
+src_for_address(Src):-
+    value_src(Src, _, _),
+    value_root([EA, Reg, _, "idx"], Src, _),
+    (value_def([EA, _, _, "mem_bias"]);
+    value_used([EA, _, _, "mem_bias"])),
+    instruction_get_op(EA,_,Op),
+    op_indirect(Op,_,_,Reg,Mult,_,_),
+    Mult = 1,
+    Reg != "NONE".
+
+not_for_address(Root):-
+    instruction_memory_access_size(EA, _, Size),
+    (value_used([EA, Base, Offset, Value_type]);
+    value_def([EA, Base, Offset, Value_type])),
+    (Value_type="mem";Value_type="global";Value_type="global_bias"),
+    pointer_size(Ptr_size),
+    Ptr_size != Size,
+    value_root([EA, Base, Offset, Value_type], Root, _).
+
+value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
+    src_for_address(Root), Type="ptr".
+
+value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    value_root([EA_arg, Reg, 0, "reg"], Root, _),
+    (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
+    code_in_refined_block(EA, Block),
+    in_function(Block, Caller),
+    function_reg_arg(Caller, Callee, [EA_arg, Reg, 0, "reg"]),
+    function_prototype(Function_symbol, Idx, Type),
+    cfg_edge_to_symbol(Callee, Function_symbol, _),
+    arg_idx(Reg, Idx),
+    Idx > 0.
+
+value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
+    value_src(Root, EA_call, "function"),
+    code(EA_call),
+    direct_call(EA_call, Callee),
+    function_prototype(Function_symbol, 0, Type),
+    cfg_edge_to_symbol(Callee, Function_symbol, _).
+
+value_type([EA, Mem_base, Offset, Value_type], Type):-
+    value_type_helper([EA, Mem_base, Offset, Value_type], Type).
+
+value_type([EA, Mem_base, Offset, Value_type], "data"):-
+    value_root([EA, Mem_base, Offset, Value_type], _, _),
+    (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
+    !value_type_helper([EA, Mem_base, Offset, Value_type], "ptr").
+
+point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
+    Offset_res=Offset + Offset_calc,
+    value_type([EA, Mem_base, Offset, Value_type], "ptr").
+
+point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
+    Calc=[EA_base, Reg_base, Offset_base, Type_base],
+    (Type_base="global";Type_base="global_bias"),
+    EA_base=EA_base, Reg_base=Reg_base, Offset_base=Offset_base,
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
+    Offset_res=Offset_calc,
+    value_type([EA, Mem_base, Offset, Value_type], "ptr").
+
+array_desc(Base, Offset_res, Unit, Len, Mult):-
+    object_candidate(Base, Idx, Mult, Offset_res, Unit),
+    loop_detected(Start, End, Steps, Idx),
+    Len = (End - Start) / Steps.
+
+pattern_tape(Base, nil, 1, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], Size, _, Calc),
+    Offset_res=Offset_calc +Offset,
+    MType="mem",
+    value_type([EA, Mem_base, Offset, MType], Type).
+
+access_handle(Base, nil, 1, Offset_res, Calc):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], _, _, Calc),
+    MType="mem",
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset.
+
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    resolve_calc([EA, Mem_base, Offset, "calc"], Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], Size, _, Calc),
+    Offset_res=Offset_calc,
+    MType="mem_bias",
+    value_type([EA, Mem_base, Offset, MType], Type).
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    src_for_address(Calc),
+    resolve_calc([EA, Mem_base, Offset, "calc"], Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], _, _, Calc),
+    MType="mem_bias",
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc.
+
+pattern_tape(Base, nil, 1, 0, [nil, [0, Size, Type]]):-
+    value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    resolve_calc(Calc, Base, nil, 1, 0),
+    value_type([EA, Reg, Address, GType], Type),
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+access_handle(Base, nil, 1, 0, Calc):-
+    value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    resolve_calc(Calc, Base, nil, 1, 0),
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+// global array field
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    Offset_res=Offset_calc,
+    Base != nil,
+    value_type([EA, Reg, Address, GType], Type),
+    (GType="global";GType="global_bias").
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    Offset_res=Offset_calc,
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+// array field
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
+    Offset_res=Offset_calc +Offset,
+    value_type([EA, Mem_base, Offset, "mem"], Type).
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, "mem"], _, _, Calc),
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset.
+
+merged_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]], Offset):-
+    pattern_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]),
+    !frame_pointer(Reg),
+    !stack_pointer(Reg).
+    
+merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    access_handle(Id, Idx, Mult, Offset1, Handle),
+    access_handle(Id, Idx, Mult, Offset2, Handle),
+    Offset2=min Offset2:{pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    access_handle(Id, Idx, Mult, Offset1, Handle1),
+    access_handle(Id, Idx, Mult, Offset2, Handle2),
+    Id != [0, "NONE", 0, "global"],
+    Handle1_start = min Offset: access_handle(Id, Idx, Mult, Offset, Handle1),
+    Handle2_start = min Offset: access_handle(Id, Idx, Mult, Offset, Handle2),
+    Handle1_start < Handle2_start,
+    Offset2=min Offset2:{pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape([0, "NONE", 0, "global"], Idx1, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape([0, "NONE", 0, "global"], Idx2, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    loop_detected(_, _, Steps, Idx1),
+    loop_detected(_, _, Steps, Idx2),
+    Offset1 + Mult > Offset2,
+    Offset2=min Offset2:{pattern_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    Offset = min Offset :merged_tape(Id, Idx, Mult, Offset, _, _),
+    Id != [0, "NONE", 0, "global"],
+    merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _).
+
+object_candidate_helper([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Last_elem),
+    Offset2 = min Offset :merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset, _, Last_elem).
+
+object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _),
+    point_to(_, _, Id, Idx, Mult, Offset).
+
+object_candidate(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]]):-
+    Offset1 = max Offset1 :{object_candidate_helper(Id, Idx, Mult, Offset, _, Offset1)},
+    object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]], Offset1).
+
+function_reg_arg(Caller, Callee, Arg):-
+    code(EA),
+    direct_call(EA, Callee),
+    code_in_refined_block(EA, Block),
+    in_function(Block, Caller),
+    value_block_last_def(EA, [EA_def, Base, Offset, "reg"]),
+    !used_value([EA_def, Base, Offset, "reg"]),
+    !stack_pointer(Base),
+    !frame_pointer(Base),
+    Arg=[EA_def, Base, Offset, "reg"].
+// TODO: interprocedural global def used
+// TODO: solve adjacent global objects

@@ -118,6 +118,9 @@ static bool loadFacts(DatalogProgram&Program, const std::string &Dir) {
             // std::cerr<<"found relation stored in csv file:" << relation_name << "\n";
             std::ifstream file(entry.path().string());
             auto Relation = Program.get()->getRelation(relation_name);
+            if (!Relation) {
+                continue;
+            }
             std::string line;
             std::vector<std::string> vec;
             while (getline(file, line)) {
@@ -398,25 +401,25 @@ int main(int argc, char **argv)
             printElapsedTimeSince(StartFunctionAnalysis);
         }
 
-        // if (vm.count("struct")) {
-        //     std::cerr << "Recovering Structs" << std::flush;
-        //     StructRecoveryPass StructRecovery;
-        //     if(!DebugDir.empty())
-        //     {
-        //         fs::path PassDir;
-        //         PassDir = DebugDir / "pass-struct-recovery";
-        //         fs::create_directories(PassDir);
-        //         StructRecovery.setDebugDir(PassDir.string() + "/");
-        //         StructRecovery.setRelationDir(DebugDir.string() + "/");
-        //     }
-        //     else {
-        //         std::cerr << "Struct Recovery relies on debug dir relations." << std::flush;
-        //         return EXIT_FAILURE;
-        //     }
-        //     auto StructRecoveryAnalysis = std::chrono::high_resolution_clock::now();
-        //     StructRecovery.computeStructs(*GTIRB->Context, Module, Threads);
-        //     printElapsedTimeSince(StructRecoveryAnalysis);
-        // }
+        if (vm.count("struct") && vm.count("load-dir")) {
+            std::cerr << "Recovering Structs" << std::flush;
+            StructRecoveryPass StructRecovery;
+            if(!DebugDir.empty())
+            {
+                fs::path PassDir;
+                PassDir = DebugDir / "pass-struct-recovery";
+                fs::create_directories(PassDir);
+                StructRecovery.setDebugDir(PassDir.string() + "/");
+                StructRecovery.setRelationDir(DebugDir.string() + "/");
+            }
+            else {
+                std::cerr << "Struct Recovery relies on debug dir relations." << std::flush;
+                return EXIT_FAILURE;
+            }
+            auto StructRecoveryAnalysis = std::chrono::high_resolution_clock::now();
+            StructRecovery.computeStructs(Threads, Souffle->get(), vm["load-dir"].as<std::string>());
+            printElapsedTimeSince(StructRecoveryAnalysis);
+        }
 
         // Remove provisional AuxData tables.
         Module.removeAuxData<gtirb::schema::Relocations>();

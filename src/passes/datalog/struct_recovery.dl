@@ -577,6 +577,7 @@ value_root_helper(Dst, Root, "value_edge"):-
 value_root_helper([EA, Idx, Address, Type], Root, "global"):-
     value_root_helper([_, _, Address, Type], Root, _),
     value_used([EA, Idx, Address, Type]),
+    Root != [EA, Idx, Address, Type],
     (Type="global";Type="global_bias").
 
 // passed by indirect mem, this is flow insensitive
@@ -613,6 +614,7 @@ value_root(Dst, Root, "value_edge"):-
 value_root([EA, Idx, Address, Type], Root, "global"):-
     value_root([_, _, Address, Type], Root, _),
     value_used([EA, Idx, Address, Type]),
+    Root != [EA, Idx, Address, Type],
     (Type="global";Type="global_bias").
 
 // passed by indirect mem, this is flow insensitive
@@ -685,9 +687,7 @@ value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
     value_root([EA, Mem_base, Offset, Value_type], Root, _),
     value_root([EA_arg, Reg, 0, "reg"], Root, _),
     (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
-    code_in_refined_block(EA, Block),
-    in_function(Block, Caller),
-    function_reg_arg(Caller, Callee, [EA_arg, Reg, 0, "reg"]),
+    function_reg_arg(_, Callee, [EA_arg, Reg, 0, "reg"]),
     function_prototype(Function_symbol, Idx, Type),
     cfg_edge_to_symbol(Callee, Function_symbol, _),
     arg_idx(Reg, Idx),

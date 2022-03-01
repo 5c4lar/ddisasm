@@ -8,9 +8,9 @@
 
 .decl local_next(EA:address, EA_next:address)
 .decl value_def(Val: value_desc)
-.output value_def
+// .output value_def
 .decl value_used(Val: value_desc)
-.output value_used
+// .output value_used
 .decl value_must_def(Val:value_desc)
 // loc defined intrax
 .decl loc_defined_in_block(EA:address, Loc: loc_desc)
@@ -20,7 +20,7 @@
 // .output loc_defined_in
 .decl value_used_in_block(Block:address, Val:value_desc)
 .decl value_block_last_def(EA:address, Val:value_desc)
-.output value_block_last_def
+// .output value_block_last_def
 .decl value_last_def(Block:address, Val:value_desc)
 // .output value_last_def
 
@@ -33,13 +33,13 @@
 .decl used_value(Val:value_desc)
 // edges connecting values
 .decl value_edge(Src:value_desc, Dst:value_desc, Type:symbol)
-.output value_edge
+// .output value_edge
 
 .decl value_arithmetic_operation(EA:address, Dst:value_desc, Op1:value_desc, Op2:value_desc, Mult:number, Offset:number)
 // .output value_arithmetic_operation
 // calculate relative addresses, Dst = Op1 + Op2 * Mult + Offset
 .decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Mult:number, Offset:number)
-.output value_arithmetic_edge
+// .output value_arithmetic_edge
 .decl resolve_calc(Calc: value_desc, Src: value_desc, Idx:value_desc, Mult:number, Offset:number)
 .output resolve_calc
 
@@ -47,13 +47,14 @@
 .decl value_src(Src: value_desc, Ref: address, From:symbol)
 // .output value_src
 // edges from value to source
+.decl value_root_helper(Val: value_desc, Root: value_desc, Type:symbol)
 .decl value_root(Val: value_desc, Root: value_desc, Type:symbol)
 .output value_root
 
 // locate sources for addresses, i.e. pointers.
 .decl src_for_address(Src: value_desc)
 .decl not_for_address(Val:value_desc)
-.output src_for_address
+// .output src_for_address
 // Mem is accessed with Size and source of the base pointer is Base_value
 .decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Base_value: value_desc)
 .output value_used_for_address
@@ -73,13 +74,13 @@
 .decl pattern_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
 .output pattern_tape
 .decl access_handle(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Handle:value_desc)
-.output access_handle
+// .output access_handle
 // Merge pattern defined for the same object
 .decl merged_tape(Src: value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout, Last_elem:number)
 .output merged_tape
 // Select the best object candidate from merged_tape.
 .decl object_candidate_helper(Src:value_desc, Idx: value_desc, Mult:number, Offset:number, Type: layout, Max_offset:number)
-.output object_candidate_helper
+// .output object_candidate_helper
 .decl object_candidate(Src:value_desc, Idx: value_desc, Mult:number, Offset: number, Type: layout)
 .output object_candidate
 
@@ -487,7 +488,7 @@ defined_value(Val):-
 
 used_value(Val):-
     value_def_used(Val, _, _).
-
+    
 value_src([EA_call, Reg, 0, "reg"], EA_call, "function"):-
     direct_call(EA_call, Callee),
     return_val_reg(Reg),
@@ -552,15 +553,51 @@ value_edge([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type], "callee"):-
     
 
 // def value root for src and its ref.
-value_root([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type], "self"):-
+value_root_helper([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type], "self"):-
     value_src([EA_def, Base, Offset, Type], EA_ref, _),
     value_used([EA_ref, Base, Offset, Type1]),
     (Type1=Type;EA_ref!=EA_def).
 
 // def value root for immediate and calc
-value_root([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type], "value_def"):-
+value_root_helper([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type], "value_def"):-
     value_src([EA_def, Base, Offset, Type], EA_ref, _),
     value_def([EA_ref, Base, Offset, Type]).
+
+// passed by def_used
+value_root_helper(Used, Root, "def_used"):-
+    value_root_helper(Def, Root, _),
+    value_def_used(Def, Used, _).
+
+// passed by value_edge
+value_root_helper(Dst, Root, "value_edge"):-
+    value_root_helper(Src, Root, _),
+    value_edge(Src, Dst, _).
+
+// passed by global mem
+value_root_helper([EA, Idx, Address, Type], Root, "global"):-
+    value_root_helper([_, _, Address, Type], Root, _),
+    value_used([EA, Idx, Address, Type]),
+    (Type="global";Type="global_bias").
+
+// passed by indirect mem, this is flow insensitive
+value_root_helper([EA2, Base2, Offset, "mem"], Root, "indirect"):-
+    value_root_helper([EA1, Base1, Offset, "mem"], Root, _),
+    value_def([EA1, Base1, Offset, "mem"]),
+    value_root_helper([EA1, Base1, 0, "base"], Root_base, _),
+    value_used([EA2, Base2, Offset, "mem"]),
+    value_root_helper([EA2, Base2, 0, "base"], Root_base, _).
+
+// inherite from helper
+value_root(Val, Root, Type):-
+    value_root_helper(Val, Root, Type).
+
+// uninitialized mem
+value_root([EA, Base, Offset, Type], [EA, Base, Offset, Type], "uninit"):-
+    value_used([EA, Base, Offset, Type]),
+    !pc_register(Base),
+    !value_def_used(_, [EA, Base, Offset, Type], _),
+    !value_edge(_, [EA, Base, Offset, Type], _),
+    !value_root_helper([EA, Base, Offset, Type], _, _).
 
 // passed by def_used
 value_root(Used, Root, "def_used"):-
@@ -577,6 +614,14 @@ value_root([EA, Idx, Address, Type], Root, "global"):-
     value_root([_, _, Address, Type], Root, _),
     value_used([EA, Idx, Address, Type]),
     (Type="global";Type="global_bias").
+
+// passed by indirect mem, this is flow insensitive
+value_root([EA2, Base2, Offset, "mem"], Root, "indirect"):-
+    value_root([EA1, Base1, Offset, "mem"], Root, _),
+    value_def([EA1, Base1, Offset, "mem"]),
+    value_root([EA1, Base1, 0, "base"], Root_base, _),
+    value_used([EA2, Base2, Offset, "mem"]),
+    value_root([EA2, Base2, 0, "base"], Root_base, _).
 
 // null
 value_root(nil, nil, "null").
@@ -606,6 +651,10 @@ value_used_for_address([EA, Base, Offset, Type], Size, Direction, [EA, Base, Off
 
 src_for_address(Src):-
     value_src(Src, _, _),
+    value_root([_, _, _, "base"], Src, _).
+
+src_for_address(Src):-
+    value_root(Src, Src, "uninit"),
     value_root([_, _, _, "base"], Src, _).
 
 src_for_address(Src):-
@@ -653,13 +702,19 @@ value_type_helper([EA, Mem_base, Offset, Value_type], Type):-
     function_prototype(Function_symbol, 0, Type),
     cfg_edge_to_symbol(Callee, Function_symbol, _).
 
+value_type_helper([EA1, Mem_base1, Offset, "mem"], Type):-
+    value_type_helper([EA, Mem_base, Offset, "mem"], Type),
+    value_root([EA, Mem_base, 0, "base"], Root, _),
+    value_root([EA1, Mem_base1, 0, "base"], Root, _).
+
 value_type([EA, Mem_base, Offset, Value_type], Type):-
     value_type_helper([EA, Mem_base, Offset, Value_type], Type).
 
-value_type([EA, Mem_base, Offset, Value_type], "data"):-
-    value_root([EA, Mem_base, Offset, Value_type], _, _),
+value_type([EA, Mem_base, Offset, Value_type], Type):-
+    value_used_for_address([EA, Mem_base, Offset, Value_type], Size, _, _),
     (Value_type="mem";Value_type="mem_bias";Value_type="global";Value_type="global_bias"),
-    !value_type_helper([EA, Mem_base, Offset, Value_type], "ptr").
+    (!pointer_size(Size), Type="data";pointer_size(Size), Type="unkown"),
+    !value_type_helper([EA, Mem_base, Offset, Value_type], _).
 
 point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
     src_for_address(Calc),

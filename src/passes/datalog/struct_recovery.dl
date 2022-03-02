@@ -763,22 +763,11 @@ point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
 point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
     resolve_calc(Calc, Base, _, _, Offset_calc),
     value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
-    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    value_root([EA, Mem_base, Offset, Value_type], Root, Root_type),
+    Root_type != "self",
     resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
     Offset_res=Offset_calc,
     (Value_type="global_bias";Value_type="global"),
-    value_type([EA, Mem_base, Offset, Value_type], "ptr").
-
-point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
-    Calc=[EA_base, Reg_base, Offset_base, Type_base],
-    (Type_base="global";Type_base="global_bias"),
-    EA_base=EA_base, Reg_base=Reg_base, Offset_base=Offset_base,
-    resolve_calc(Calc, Base, nil, 1, Offset_calc),
-    value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
-    value_root([EA, Mem_base, Offset, Value_type], Root, _),
-    Root != Calc,
-    resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
-    Offset_res=Offset_calc,
     value_type([EA, Mem_base, Offset, Value_type], "ptr").
 
 array_desc(Base, Offset_res, Unit, Len, Mult):-

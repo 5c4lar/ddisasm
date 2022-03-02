@@ -8,7 +8,7 @@
 .decl block(Address:address, Size:unsigned)
 .input block
 
-.decl next_block(Block1:address,Block2:address)
+.decl next_block(EA:address,Block:address)
 .input next_block
 ///////////////////////////////////////////////////
 .decl instruction(ea:address, size:unsigned, prefix:symbol, opcode:symbol,

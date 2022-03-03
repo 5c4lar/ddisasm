@@ -1,0 +1,237 @@
+
+local_next(EA, EA_next):-
+    code_in_refined_block(EA,Block),
+    may_fallthrough(EA,EA_next),
+    code_in_refined_block(EA_next,Block).
+
+def_usable_type(Type, Type1):-
+    (Type="reg";Type="calc"),
+    (Type1="reg";Type1="calc";Type1="base";Type1="idx").
+
+def_usable_type("mem", "mem").
+def_usable_type("mem_calc", "mem").
+// def_usable_type("mem_bias", "mem_bias").
+
+def_usable_type("global", "global").
+
+value_def([EA, Base, Offset, "mem"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,"NONE",_,Offset,_),
+    !pc_register(Base).
+
+value_def([EA, Base, Offset, "mem_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,DestOp),
+    op_indirect(DestOp,"NONE",Base,Idx,_,Offset,_),
+    Idx != "NONE",
+    !pc_register(Base).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    !reg_reg_arithmetic_operation(EA, Reg, _, _, _, _),
+    !reg_arithmetic_operation(EA,Reg,_,_,_),
+    instruction_get_operation(EA,Operation),
+    Operation != "LEA",
+    instruction_get_dest_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg).
+
+value_def([EA, Reg, 0, "calc"]):-
+    code(EA),
+    (reg_arithmetic_operation(EA,Reg,_,_,_);
+    reg_reg_arithmetic_operation(EA,Reg,_,_,_,_);
+    instruction_get_operation(EA,Operation),
+    Operation = "LEA",
+    instruction_get_dest_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg)).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(EA,Operation),
+    call_operation(Operation),
+    !delay_slot(EA,_),
+    function_non_maintained_reg(Reg).
+
+value_def([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(Call,Operation),
+    call_operation(Operation),
+    delay_slot(Call,EA),
+    function_non_maintained_reg(Reg).
+
+value_def([EA, Reg, 0, "calc"]):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    (Operation="PUSH";Operation="POP"),
+    stack_pointer(Reg).
+
+value_def([EA, Base, Address, "global"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE",Base,"NONE",_,Offset,_),
+    pc_register(Base),
+    next(EA, PC),
+    Address = as(Offset, number) + as(PC, number).
+
+value_def([EA, Idx, Offset, "global_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_dest_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
+
+value_def([EA, Reg, as(Size, number), "mem"]):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    Operation="PUSH",
+    pointer_size(Size),
+    stack_pointer(Reg).
+
+value_def(Def):-
+    value_arithmetic_operation(_, Def, _, _, _, _).
+
+
+value_must_def([EA, Base, Offset, Type]):-
+    code(EA),
+    value_def([EA, Base, Offset, Type]),
+    instruction_get_operation(EA, Op),
+    !conditional_operation(Op).
+
+value_used([EA, Base, Offset, "mem"]):-
+    instruction_get_operation(EA, Operation),
+    Operation!="LEA",
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_),
+    !pc_register(Base).
+
+value_used([EA, Base, Offset, "mem_bias"]):-
+    instruction_get_operation(EA, Operation),
+    Operation!="LEA",
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,Idx,_,Offset,_),
+    Idx != "NONE",
+    !pc_register(Base).
+
+value_used([EA, Base, Address, "global"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_indirect(SrcOp,"NONE",Base,"NONE",_,Offset,_),
+    pc_register(Base),
+    next(EA, PC),
+    Address = as(Offset, number) + as(PC, number).
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_src_op(EA,_,Op),
+    op_regdirect_contains_reg(Op,Reg),
+    !is_xor_reset(EA).
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    (reg_arithmetic_operation(EA,Reg,Reg,_,_);
+    reg_reg_arithmetic_operation(EA,Reg,Reg,_,_,_)).
+
+value_used([EA, Reg, 0, "base"]):-
+    code(EA),
+    instruction_get_op(EA,_,Op),
+    op_indirect(Op,_,Reg,_,_,_,_),
+    Reg != "NONE".
+
+value_used([EA, Reg, 0, "idx"]):-
+    code(EA),
+    instruction_get_op(EA,_,Op),
+    op_indirect(Op,_,_,Reg,_,_,_),
+    Reg != "NONE".
+
+value_used([EA, Reg, 0, "reg"]):-
+    code(EA),
+    instruction_get_operation(Call,Operation),
+    call_operation(Operation),
+    delay_slot(Call,EA),
+    function_non_maintained_reg(Reg).
+
+value_used([EA, Idx, Offset, "global_bias"]):-
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,Op),
+    op_indirect(Op,"NONE","NONE",Idx,_,Offset,_).
+
+loc_defined_in(Block, [Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type1]),
+    code_in_refined_block(EA, Block),
+    def_usable_type(Type1, Type).
+
+loc_defined_in_block(EA, [Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]).
+
+loc_defined_in_block(EA, [Base, Offset, Type1]):-
+    value_block_last_def(EA, [EA1, Base, Offset, Type]),
+    value_def([EA1, Base, Offset, Type]),
+    value_used([EA, Base, Offset, _]),
+    def_usable_type(Type, Type1).
+
+value_used_in_block(Block, [EA, Base, Offset, Type]):-
+    value_used([EA, Base, Offset, Type]),
+    code_in_refined_block(EA, Block).
+
+value_block_last_def(EA_next, [EA, Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]),
+    local_next(EA, EA_next).
+
+value_block_last_def(EA_next, [EA_def, Base, Offset, Type]):-
+    value_block_last_def(EA, [EA_def, Base, Offset, Type]),
+    !value_must_def([EA, Base, Offset, Type]),
+    !value_def([EA, Base, 0, "calc"]),
+    !value_def([EA, Base, 0, "reg"]),
+    local_next(EA, EA_next).
+
+value_last_def(Block, [EA, Base, Offset, Type]):-
+    value_def([EA, Base, Offset, Type]),
+    block_next(EA, Block),
+    !flow_def(EA, Base, Block, _).
+
+// flow from def block to next block
+value_last_def(Block, [EA, Base, Offset, Type]):-
+    value_block_last_def(Block_end, [EA, Base, Offset, Type]),
+    !value_must_def([Block_end, Base, Offset, Type]),
+    !value_def([Block_end, Base, 0, "calc"]),
+    !value_def([Block_end, Base, 0, "reg"]),
+    block_next(Block_end, Block),
+    !flow_def(Block_end, Base, Block, _).
+
+// flow through another block
+value_last_def(Block_next, [EA, Base, Offset, Type]):-
+    value_last_def(Block, [EA, Base, Offset, Type]),
+    !loc_defined_in(Block, [Base, Offset, Type]),
+    block_last_instruction(Block, Block_end),
+    block_next(Block_end, Block_next),
+    !flow_def(Block_end, Base, Block, _).
+
+// flow def
+value_last_def(Block_next, [Block_end, Reg, 0, "reg"]):-
+    flow_def(Block_end,Reg,Block_next,_).
+
+value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "intra_block"):-
+    value_used([EA, Base, Offset, Type1]),
+    value_block_last_def(EA, [EA_def, Base, Offset, Type]),
+    def_usable_type(Type, Type1).
+
+value_def_used([EA_def, Base, Offset, Type], [EA, Base, Offset, Type1], "inter_block"):-
+    value_used([EA, Base, Offset, Type1]),
+    code_in_refined_block(EA, Block),
+    value_last_def(Block, [EA_def, Base, Offset, Type]),
+    !loc_defined_in_block(EA, [Base, Offset, Type1]),
+    (Type != "mem"; 
+    (Type="mem",!loc_defined_in_block(EA, [Base, Offset, "base"]))),
+    def_usable_type(Type, Type1).
+
+defined_value(Val):-
+    value_def_used(_, Val, _).
+
+used_value(Val):-
+    value_def_used(Val, _, _).

@@ -68,6 +68,10 @@ void StructRecoveryPass::computeStructs(unsigned int NThreads, souffle::SouffleP
     auto StructRecovery = DatalogProgram(SouffleProgram);
     loadFacts(StructRecovery, FactsDir);
     loadRelations(StructRecovery.get(), Program);
+    if(DebugDir)
+    {
+        StructRecovery.writeFacts(*DebugDir);
+    }
     StructRecovery.threads(NThreads);
     StructRecovery.run();
     if(DebugDir)

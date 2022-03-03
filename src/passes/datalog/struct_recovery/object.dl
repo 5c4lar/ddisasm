@@ -1,0 +1,137 @@
+pattern_tape(Base, nil, 1, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], Size, _, Calc),
+    Offset_res=Offset_calc +Offset,
+    MType="mem",
+    value_type([EA, Mem_base, Offset, MType], Type).
+
+access_handle(Base, nil, 1, Offset_res, Calc):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc(Calc, Base, nil, 1, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], _, _, Calc),
+    MType="mem",
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset.
+
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc([EA, Mem_base, Offset, "calc"], Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], Size, _, Calc),
+    Offset_res=Offset_calc,
+    MType="mem_bias",
+    value_type([EA, Mem_base, Offset, MType], Type).
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc([EA, Mem_base, Offset, "calc"], Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, MType], _, _, Calc),
+    MType="mem_bias",
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc.
+
+pattern_tape(Base, nil, 1, 0, [nil, [0, Size, Type]]):-
+    value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    resolve_calc(Calc, Base, nil, 1, 0),
+    value_type([EA, Reg, Address, GType], Type),
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+access_handle(Base, nil, 1, 0, Calc):-
+    value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    resolve_calc(Calc, Base, nil, 1, 0),
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+// global array field
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    value_used_for_address([EA, Reg, Address, GType], Size, _, Calc),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    Offset_res=Offset_calc,
+    Base != nil,
+    value_type([EA, Reg, Address, GType], Type),
+    (GType="global";GType="global_bias").
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    value_used_for_address([EA, Reg, Address, GType], _, _, Calc),
+    EA=EA, Reg=Reg, Address=Address,
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    Offset_res=Offset_calc,
+    Base != nil,
+    (GType="global";GType="global_bias").
+
+// array field
+pattern_tape(Base, Idx, Mult, Offset_res, [nil, [0, Size, Type]]):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, "mem"], Size, _, Calc),
+    Offset_res=Offset_calc +Offset,
+    value_type([EA, Mem_base, Offset, "mem"], Type).
+
+access_handle(Base, Idx, Mult, Offset_res, Calc):-
+    src_for_address(Calc),
+    src_for_address(Base),
+    resolve_calc(Calc, Base, Idx, Mult, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, "mem"], _, _, Calc),
+    EA=EA, Mem_base=Mem_base,
+    Offset_res=Offset_calc +Offset.
+
+merged_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]], Offset):-
+    pattern_tape([EA, Reg, B_offset, BType], Idx, Mult, Offset, [nil, [0, Size, Type]]),
+    !frame_pointer(Reg),
+    !stack_pointer(Reg).
+    
+merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    access_handle(Id, Idx, Mult, Offset1, Handle),
+    access_handle(Id, Idx, Mult, Offset2, Handle),
+    Offset2=min Offset2:{pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+merged_tape(Id, Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape(Id, Idx, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape(Id, Idx, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    access_handle(Id, Idx, Mult, Offset1, Handle1),
+    access_handle(Id, Idx, Mult, Offset2, Handle2),
+    Id != [0, "NONE", 0, "global"],
+    Handle1_start = min Offset: access_handle(Id, Idx, Mult, Offset, Handle1),
+    Handle2_start = min Offset: access_handle(Id, Idx, Mult, Offset, Handle2),
+    Handle1_start < Handle2_start,
+    Offset2=min Offset2:{pattern_tape(Id, Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset1, [[Prev, [TypeOffset1, Size1, Type1]], [TypeOffset2, Size2, Type2]], Last_elem):-
+    merged_tape([0, "NONE", 0, "global"], Idx1, Mult, Offset1, [Prev, [TypeOffset1, Size1, Type1]], Last_elem1),
+    pattern_tape([0, "NONE", 0, "global"], Idx2, Mult, Offset2, [nil, [0, Size2, Type2]]),
+    loop_detected(_, _, Steps, Idx1),
+    loop_detected(_, _, Steps, Idx2),
+    Offset1 + Mult > Offset2,
+    Offset2=min Offset2:{pattern_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, _), Offset2 >= Last_elem1 + as(Size1, number)},
+    TypeOffset2 = Offset2 - Offset1,
+    Last_elem = TypeOffset2 + Offset1.
+
+object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    Offset = min Offset :merged_tape(Id, Idx, Mult, Offset, _, _),
+    Id != [0, "NONE", 0, "global"],
+    merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _).
+
+object_candidate_helper([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset2, [Prev, [Offset1, Size1, Type1]], Last_elem),
+    Offset2 = min Offset :merged_tape([0, "NONE", 0, "global"], Idx, Mult, Offset, _, Last_elem).
+
+object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], Offset1):-
+    merged_tape(Id, Idx, Mult, Offset, [Prev, [Offset1, Size1, Type1]], _),
+    point_to(_, _, Id, Idx, Mult, Offset).
+
+object_candidate(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]]):-
+    Offset1 = max Offset1 :{object_candidate_helper(Id, Idx, Mult, Offset, _, Offset1)},
+    object_candidate_helper(Id, Idx, Mult, Offset, [Prev, [Offset1, Size2, Type2]], Offset1).

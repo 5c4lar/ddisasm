@@ -1,0 +1,20 @@
+point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
+    src_for_address(Calc),
+    resolve_calc(Calc, Base, _, _, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
+    value_root([EA, Mem_base, Offset, Value_type], Root, _),
+    resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
+    Offset_res=Offset + Offset_calc,
+    value_type([EA, Mem_base, Offset, Value_type], "ptr"),
+    src_for_address(Root_base).
+
+point_to(Base, Offset_res, Root_base, Root_idx, Root_mult, Root_offset):-
+    resolve_calc(Calc, Base, _, _, Offset_calc),
+    value_used_for_address([EA, Mem_base, Offset, Value_type], _, _, Calc),
+    value_root([EA, Mem_base, Offset, Value_type], Root, Root_type),
+    Root_type != "self",
+    resolve_calc(Root, Root_base, Root_idx, Root_mult, Root_offset),
+    Offset_res=Offset_calc,
+    (Value_type="global_bias";Value_type="global"),
+    value_type([EA, Mem_base, Offset, Value_type], "ptr").
+    // src_for_address(Root_base).

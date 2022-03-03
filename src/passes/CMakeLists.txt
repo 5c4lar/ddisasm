@@ -113,13 +113,21 @@ endif()
 
 if(WIN32)
   set(STRUCT_RECOVERY_DATALOG_MAIN
-      "$$(wslpath ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery.dl)")
+      "$$(wslpath ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery/struct_recovery.dl)")
 else()
   set(STRUCT_RECOVERY_DATALOG_MAIN
-      ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery.dl)
+      ${CMAKE_CURRENT_SOURCE_DIR}/datalog/struct_recovery/struct_recovery.dl)
 endif()
 
-set(STRUCT_RECOVERY_DATALOG_SOURCES datalog/struct_recovery.dl datalog/struct_recovery_input.dl)
+set(STRUCT_RECOVERY_DATALOG_SOURCES 
+  datalog/struct_recovery/struct_recovery.dl 
+  datalog/struct_recovery/def_used.dl
+  datalog/struct_recovery/input.dl
+  datalog/struct_recovery/object.dl
+  datalog/struct_recovery/point_to.dl
+  datalog/struct_recovery/resolve_calc.dl
+  datalog/struct_recovery/value_root.dl
+  datalog/struct_recovery/value_type.dl)
 
 set(STRUCT_RECOVERY_CPP
     "${CMAKE_BINARY_DIR}/src/passes/souffle_struct_recovery.cpp")

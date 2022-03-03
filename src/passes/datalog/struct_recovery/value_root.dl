@@ -1,0 +1,165 @@
+value_src([EA_call, Reg, 0, "reg"], EA_call, "function"):-
+    direct_call(EA_call, Callee),
+    return_val_reg(Reg),
+    cfg_edge_to_symbol(Callee, _, _).
+
+value_src([EA, Reg, 0, "calc"], EA, "calc"):-
+    value_def([EA, Reg, 0, "calc"]).
+
+value_src([EA, Base, Offset, "mem_calc"], EA, "mem_calc"):-
+    value_def([EA, Base, Offset, "mem_calc"]).
+
+value_src([EA, Reg, 0, "reg"], EA, "global_ptr"):-
+    value_reg(EA, Reg, EA, "NONE", 0, _, _).
+
+value_src([EA, Base, Offset, Type], EA, "immediate"):-
+    value_def([EA, Base, Offset, Type]),
+    mov(EA),
+    code(EA),
+    instruction_get_src_op(EA,_,SrcOp),
+    op_immediate(SrcOp, _).
+
+value_src([EA, Base, Address, "global"], EA, "global"):-
+    value_used([EA, Base, Address, "global"]),
+    initialized_data_segment(Begin, End),
+    as(Address, address) >= Begin,
+    as(Address, address) < End.
+
+value_src([Function, Reg, 0, "reg"], EA, "stack"):-
+    code_in_refined_block(EA, EA_block),
+    in_function(EA_block, Function),
+    value_def([EA, Reg, 0, "reg"]),
+    frame_pointer(Reg).
+
+value_edge([EA, Base_src, Offset_src, Type_src], [EA, Base_dst, Offset_dst, Type_dst], "mov"):-
+    mov(EA),
+    value_def([EA, Base_dst, Offset_dst, Type_dst]),
+    value_used([EA, Base_src, Offset_src, Type_src]),
+    (Type_src="reg";Type_src="mem";Type_src="global";Type_src="global_bias").
+
+// Reg args
+value_edge([EA_def,Reg,0,Type], [EA,Reg,0,Type], "caller"):-
+    value_used([EA,Reg,0,Type]),
+    !pc_register(Reg),
+    !stack_pointer(Reg),
+    !frame_pointer(Reg),
+    code_in_refined_block(EA,Block),
+    in_function(Block, Function),
+    !defined_value([EA, Reg, 0, Type]),
+    direct_call(EA_call, Function),
+    (Type="reg";Type="base";Type="idx"),
+    (
+        block_last_def(EA_call,EA_def,Reg)
+        ;
+        !block_last_def(EA_call,_,Reg),
+        code_in_refined_block(EA_call, EA_call_block),
+        last_def(EA_call_block,EA_def,Reg)
+    ).
+
+value_edge([EA_def, Reg, 0, "reg"], [EA_used, Reg, 0, Type], "callee"):-
+    def_used_return_val_reg(EA_def, _, Reg, EA_used, _),
+    value_used([EA_used, Reg, 0, Type]).
+    
+
+// def value root for src and its ref.
+value_root_helper([EA_ref, Base, Offset, Type1], [EA_def, Base, Offset, Type], "self"):-
+    value_src([EA_def, Base, Offset, Type], EA_ref, _),
+    value_used([EA_ref, Base, Offset, Type1]),
+    (Type1=Type;EA_ref!=EA_def).
+
+// def value root for immediate and calc
+value_root_helper([EA_ref, Base, Offset, Type], [EA_def, Base, Offset, Type], "value_def"):-
+    value_src([EA_def, Base, Offset, Type], EA_ref, _),
+    value_def([EA_ref, Base, Offset, Type]).
+
+// passed by def_used
+value_root_helper(Used, Root, "def_used"):-
+    value_root_helper(Def, Root, _),
+    value_def_used(Def, Used, _).
+
+// passed by value_edge
+value_root_helper(Dst, Root, "value_edge"):-
+    value_root_helper(Src, Root, _),
+    value_edge(Src, Dst, _).
+
+// passed by global mem
+value_root_helper([EA, Idx, Address, Type], Root, "global"):-
+    value_root_helper([_, _, Address, Type], Root, _),
+    value_used([EA, Idx, Address, Type]),
+    Root != [EA, Idx, Address, Type],
+    (Type="global";Type="global_bias").
+
+// passed by indirect mem, this is flow insensitive
+// value_root_helper([EA2, Base2, Offset, "mem"], Root, "indirect"):-
+//     value_root_helper([EA1, Base1, Offset, "mem"], Root, _),
+//     value_def([EA1, Base1, Offset, "mem"]),
+//     value_root_helper([EA1, Base1, 0, "base"], Root_base, _),
+//     value_used([EA2, Base2, Offset, "mem"]),
+//     value_root_helper([EA2, Base2, 0, "base"], Root_base, _).
+
+// Some functions are not called in the binary, use value_root_helper to
+// find the uninitalized value.
+
+// inherite from helper
+value_root(Val, Root, Type):-
+    value_root_helper(Val, Root, Type).
+
+// uninitialized reg
+value_root([EA, Base, Offset, Type], [EA, Base, Offset, Type], "uninit"):-
+    value_used([EA, Base, Offset, Type]),
+    Type = "reg",
+    !pc_register(Base),
+    !value_def_used(_, [EA, Base, Offset, Type], _),
+    !value_edge(_, [EA, Base, Offset, Type], _),
+    !value_root_helper([EA, Base, Offset, Type], _, _).
+
+// uninitialized mem
+value_root([EA, Base, Offset, Type], [EA, Base, Offset, Type], "uninit"):-
+    value_used([EA, Base, Offset, Type]),
+    Type = "mem",
+    value_root([EA, Base, 0, "base"], Root, _),
+    value_root(Root, Root, "uninit"),
+    !pc_register(Base),
+    !value_def_used(_, [EA, Base, Offset, Type], _),
+    !value_edge(_, [EA, Base, Offset, Type], _),
+    !value_root_helper([EA, Base, Offset, Type], _, _).
+
+// passed by def_used
+value_root(Used, Root, "def_used"):-
+    value_root(Def, Root, _),
+    value_def_used(Def, Used, _).
+
+// passed by value_edge
+value_root(Dst, Root, "value_edge"):-
+    value_root(Src, Root, _),
+    value_edge(Src, Dst, _).
+
+// passed by global mem
+value_root([EA, Idx, Address, Type], Root, "global"):-
+    value_root([_, _, Address, Type], Root, _),
+    value_used([EA, Idx, Address, Type]),
+    Root != [EA, Idx, Address, Type],
+    (Type="global";Type="global_bias").
+
+// propagate value after resolve base
+value_root([EA, Base, Offset, Type], Root, "resolve"):-
+    Type = "mem",
+    value_used([EA, Base, Offset, Type]),
+    value_def([EA_def, Base1, Offset, Type]),
+    value_root([EA_def, Base1, Offset, Type], Root, _),
+    value_root([EA, Base, 0, "base"], Base_root1, _),
+    value_root([EA_def, Base1, 0, "base"], Base_root2, _),
+    resolve_calc(Base_root1, Root_base, _, Mult, Offset_root),
+    resolve_calc(Base_root2, Root_base, _, Mult, Offset_root),
+    !value_root_helper([EA, Base, Offset, Type], _, _).
+
+// passed by indirect mem, this is flow insensitive
+value_root([EA2, Base2, Offset, "mem"], Root, "indirect"):-
+    value_root([EA1, Base1, Offset, "mem"], Root, _),
+    value_def([EA1, Base1, Offset, "mem"]),
+    value_root([EA1, Base1, 0, "base"], Root_base, _),
+    value_used([EA2, Base2, Offset, "mem"]),
+    value_root([EA2, Base2, 0, "base"], Root_base, _).
+
+// null
+value_root(nil, nil, "null").

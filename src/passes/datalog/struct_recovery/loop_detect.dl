@@ -1,0 +1,30 @@
+block_after(Block, Block_next):-
+    block_last_instruction(Block, Block_end),
+    block_next(Block_end, Block_next).
+
+block_after(Block, Block_next):-
+    block_after(Block, Block_after),
+    block_last_instruction(Block_after, Block_end),
+    block_next(Block_end, Block_next).
+
+loop_entry(Block):-
+    block_last_instruction(Block_prev, Block_end),
+    block_next(Block_end, Block),
+    block_after(Block, Block),
+    block_after(Block_prev, Block),
+    !block_after(Block, Block_prev).
+
+loop_exit(Block):-
+    block_last_instruction(Block, Block_end),
+    block_next(Block_end, Block_next),
+    block_after(Block, Block),
+    block_after(Block, Block_next),
+    !block_after(Block_next, Block).
+
+block_in_loop(Block, Block_entry, Block_exit):-
+    loop_entry(Block_entry),
+    loop_exit(Block_exit),
+    block_after(Block_entry, Block),
+    block_after(Block, Block_entry),
+    block_after(Block_exit, Block),
+    block_after(Block, Block_exit).

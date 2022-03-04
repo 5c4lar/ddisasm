@@ -1,0 +1,51 @@
+op_to_val(EA, Op, Index, Direction, $Memory(EA, Base, Idx, Mult, Offset, Direction)):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    Operation!="LEA",
+    (instruction_get_src_op(EA, Index, Op),Direction="out";
+     instruction_get_dest_op(EA, Index, Op),Direction="in"),
+    op_indirect(Op,"NONE",Base,Idx,Mult,Offset,_),
+    !pc_register(Base),
+    Base!="NONE".
+
+op_to_val(EA, Op, Index, "idx", $Register(EA, Reg, Index, "idx", "out")):-
+    code(EA),
+    instruction_get_op(EA,Index,Op),
+    op_indirect(Op,_,_,Reg_orig,_,_,_),
+    track_register(Reg_orig,Reg).
+
+op_to_val(EA, Op, Index, "base", $Register(EA, Reg, Index, "base", "out")):-
+    code(EA),
+    instruction_get_op(EA,Index,Op),
+    op_indirect(Op,_,Reg_orig,_,_,_,_),
+    track_register(Reg_orig,Reg).
+
+op_to_val(EA, Op, Index, Direction, $Register(EA, Reg, Index, "reg", Direction)):-
+    code(EA),
+    (instruction_get_src_op(EA, Index, Op),Direction="out";
+     instruction_get_dest_op(EA, Index, Op),Direction="in"),
+    op_regdirect_contains_reg(Op, Reg).
+
+op_to_val(EA, Op, Index, "out", $Immediate(EA, Val, "data")):-
+    code(EA),
+    instruction_get_operation(EA, Operation),
+    !jump_operation(Operation),
+    !call_operation(Operation),
+    instruction_get_op(EA, Index, Op),
+    op_immediate(Op, Val).
+
+op_to_val(EA, Op, Index, Direction, $Global(EA, as(Address, address), Idx, Mult, Direction)):-
+    code(EA),
+    (instruction_get_src_op(EA, Index, Op),Direction="out";
+     instruction_get_dest_op(EA, Index, Op),Direction="in"),
+    op_indirect(Op,"NONE",Base,Idx,Mult,Offset,_),
+    pc_register(Base),
+    next(EA, PC),
+    Address = as(Offset, number) + as(PC, number).
+
+op_to_val(EA, Op, Index, Direction, $Global(EA, as(Offset, address), Idx, Mult, Direction)):-
+    code(EA),
+    Offset != 0,
+    (instruction_get_src_op(EA, Index, Op),Direction="out";
+     instruction_get_dest_op(EA, Index, Op),Direction="in"),
+    op_indirect(Op,"NONE","NONE",Idx,Mult,Offset,_).

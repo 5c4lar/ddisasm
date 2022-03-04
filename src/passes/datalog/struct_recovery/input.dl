@@ -4,12 +4,10 @@
 .type operand_code <: unsigned
 .type register <: symbol
 .type operand_index <: unsigned
+.type symbol_position <: symbol
 
 .decl block(Address:address, Size:unsigned)
 .input block
-
-.decl next_block(EA:address,Block:address)
-.input next_block
 ///////////////////////////////////////////////////
 .decl instruction(ea:address, size:unsigned, prefix:symbol, opcode:symbol,
           op1:operand_code, op2:operand_code, op3:operand_code, op4:operand_code,
@@ -42,6 +40,12 @@
 
 .decl write_only_operation(Operation:symbol)
 .input write_only_operation
+
+.decl jump_operation(Operation:symbol)
+.input jump_operation
+
+.decl call_operation(Operation:symbol)
+.input call_operation
 
 .decl track_register(RegName:register,RegGenericName:register)
 .input track_register
@@ -78,9 +82,6 @@ Arithmetic operation on one source register of the form Dst = Src * Mult + Offse
 */
 .decl reg_arithmetic_operation(EA:address,Dst:register,Src:register,Mult:number,Offset:number)
 .input reg_arithmetic_operation
-
-.decl call_operation(operation:symbol)
-.input call_operation
 
 .decl delay_slot(BranchEA:address,EA:address)
 .input delay_slot
@@ -285,3 +286,6 @@ is_xor_reset(EA):-
 
 .decl instruction_memory_access_size(EA:address,Op_index:operand_index,Size:unsigned)
 .input instruction_memory_access_size
+
+.decl best_symexpr_symbol(EA:address,SymbolName:symbol,Pos:symbol_position)
+.input best_symexpr_symbol

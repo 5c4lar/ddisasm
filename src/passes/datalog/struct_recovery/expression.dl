@@ -1,0 +1,261 @@
+value_arithmetic_edge(DstVal, SrcVal2, SrcVal1, Mult, 0):-
+    instruction(EA,_,_,Operation,Op1,Op2,0,0,_,_),
+    op_to_val(EA, Op2, 2, "in", DstVal),
+    op_to_val(EA, Op1, 1, "out", SrcVal1),
+    op_to_val(EA, Op2, 2, "out", SrcVal2),
+    (Operation="ADD", Mult=1;
+    Operation="SUB", Mult=-1).
+
+value_arithmetic_edge(DstVal, SrcVal, $Empty_val(), 1, Offset):-
+    instruction(EA,_,_,Operation,Op1,0,0,0,_,_),
+    op_to_val(EA, Op1, 1, "in", DstVal),
+    op_to_val(EA, Op1, 1, "out", SrcVal),
+    (Operation="INC", Offset=1;
+    Operation="DEC", Offset=-1).
+
+value_arithmetic_edge(DstVal, $Empty_val(), SrcVal, Mult, 0):-
+    instruction(EA,_,_,Operation,Op1,Op2,0,0,_,_),
+    op_to_val(EA, Op2, 2, "in", DstVal),
+    op_to_val(EA, Op2, 2, "out", SrcVal),
+    op_immediate(Op1, Val),
+    (Operation="SHL", Mult=2^Val;
+    Operation="IMUL", Mult=Val).
+
+value_arithmetic_edge(DstVal, $Empty_val(), SrcVal, Mult, 0):-
+    instruction(EA,_,_,"IMUL",Op1,Op2,Op3,0,_,_),
+    op_to_val(EA, Op3, 3, "in", DstVal),
+    op_to_val(EA, Op1, 1, "out", SrcVal),
+    op_immediate(Op2, Mult).
+
+value_arithmetic_edge(DstVal, SrcVal1, SrcVal2, Mult, Offset):-
+    instruction(EA,_,_,"LEA",Op1,Op2,0,0,_,_),
+    op_indirect(Op1,_,Reg1,Reg2,Mult,Offset,_),
+    op_to_val(EA, Op2, 2, "in", DstVal),
+    (op_to_val(EA, Op1, 1, "base", SrcVal1),Reg1!="NONE";SrcVal1=$Empty_val(),Reg1="NONE"),
+    (op_to_val(EA, Op1, 1, "idx", SrcVal2),Reg2!="NONE";SrcVal2=$Empty_val(),Reg2="NONE").
+
+address_expr(Val, Exp):-
+    op_to_val(_, _, Index, _, Val),
+    Val=$Memory(EA, Base, Idx, Mult, Offset, Direction),
+    Base=Base, Idx=Idx, Direction=Direction,
+    op_to_val(EA, _, Index, "base", Base_val),
+    evaluate_val(Base_val, Base_exp, _, Base_type, _),
+    (
+        op_to_val(EA, _, Index, "idx", Idx_val),
+        evaluate_val(Idx_val, Idx_exp, _, Idx_type, _);
+        Idx_exp=$Number(0),Idx_type="data"
+    ),
+    (
+        Base_type="ptr",Idx_type="data",
+        Exp=$Add(Base_exp, $Add($Mult(Idx_exp, $Number(Mult)), $Number(Offset)));
+        Base_type="data",Idx_type="ptr", Mult=1,
+        Exp=$Add(Idx_exp, $Add($Mult(Base_exp, $Number(1)), $Number(Offset)))
+    ).
+
+address_expr(Val, Exp):-
+    op_to_val(_, _, Index, _, Val),
+    Val=$Global(EA, Address, Idx, Mult, Direction),
+    Direction=Direction,
+    (
+        Idx="NONE", Mult=1,
+        Exp=$Address(as(Address, number));
+        Idx!="NONE",
+        op_to_val(EA, _, Index, "idx", Idx_val),
+        evaluate_val(Idx_val, Idx_exp, _, _, _),
+        Exp=$Add($Address(as(Address, number)), $Mult(Idx_exp, $Number(Mult)))
+    ).
+
+address_expr_simplified(Val, Exp):-
+    address_expr(Val, Exp_orig),
+    simplify_exp(Exp_orig, Exp).
+    
+simplify_exp(Exp, Exp):-
+    evaluate_val(_, Exp, _, _, Type),
+    (Type="func";Type="symbol";Type="frame";Type="immediate";Type="null").
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    Exp=$Add($Number(x), $Number(y)),
+    Res=$Number(x+y).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    Exp=$Mult($Number(x), $Number(Mult)),
+    Res=$Number(x*Mult).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    (Exp=$Add($Address(x), Exp_offset),
+    (Res=$Add($Address(x), Res_offset),Res_offset!=$Number(0);
+    Res=$Address(x), Res_offset=$Number(0));
+    Exp=$Add($Symbolic(x, y), Exp_offset),
+    (Res=$Add($Symbolic(x, y), Res_offset),Res_offset!=$Number(0);
+    Res=$Symbolic(x, y), Res_offset=$Number(0))),
+    simplify_exp(Exp_offset, Res_offset).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    (Exp=$Add(Exp_offset, $Address(x)),
+    Res=$Add($Address(x), Res_offset);
+    Exp=$Add(Exp_offset, $Symbolic(x, y)),
+    Res=$Add($Symbolic(x, y), Res_offset)),
+    simplify_exp(Exp_offset, Res_offset).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    (Exp=$Add(Exp1, $Number(0));
+    Exp=$Mult(Exp1, $Number(1))),
+    simplify_exp(Exp1, Res).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    Exp=$Add($Number(0), Exp1),
+    simplify_exp(Exp1, Res).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    (Exp=$Add($Number(x), Exp1);
+    Exp=$Add(Exp1, $Number(x))),
+    simplify_exp(Exp1, $Number(y)),
+    Res=$Number(x+y).
+
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    (Exp=$Add($Number(x), Exp1);
+    Exp=$Add(Exp1, $Number(x))),
+    x!=0,
+    simplify_exp(Exp1, Res1),
+    (Res1=$Add(Symbol, $Number(y)),
+    Res=$Add(Symbol, $Number(x+y));
+    Res1=Symbol,
+    Res=$Add(Symbol, $Number(x))),
+    evaluate_val(_, Symbol, _, _, Type),
+    (Type="func";Type="symbol").
+
+// value from function return
+evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), EA_call, "ptr", "func"):-
+    direct_call(EA_call, Callee),
+    return_val_reg(Reg),
+    cfg_edge_to_symbol(Callee, Function, _),
+    function_prototype(Function, 0, "ptr").
+
+// value from global_ptr
+evaluate_val($Register(EA, Reg, 0, "reg", "in"), $Address(Address), EA, "ptr", "symbol"):-
+    best_symexpr_symbol(as(Address, address), _, _),
+    !is_xor_reset(EA),
+    Address != 0,
+    value_reg(EA, Reg, EA, "NONE", 0, Address, _).
+
+// value of frame pointer
+evaluate_val($Register(EA, Reg, Index, "reg", "in"), $Symbolic(EA, "frame_pointer"), EA, "ptr", "frame"):-
+    value_def($Register(EA, Reg, Index, "reg", "in")),
+    frame_pointer(Reg).
+
+// mov from immediate
+evaluate_val(DstVal, $Number(Val), EA, "data", "immediate"):-
+    mov(EA),
+    instruction_get_dest_op(EA, Index1, Op1),
+    op_to_val(EA, Op1, Index1, "in", DstVal),
+    instruction_get_src_op(EA, Index2, Op2),
+    op_to_val(EA, Op2, Index2, "out", $Immediate(EA, Val, "data")).
+
+// value from def_used
+evaluate_val(Used, Exp, EA, Type, Reason):-
+    value_def_used(Def, Used, _),
+    evaluate_val(Def, Exp, EA, Type, Reason).
+
+// calc with immediate
+evaluate_val($Immediate(EA, Val, "data"), $Number(Val), 0, "data", "immediate"):-
+    op_to_val(_, _, _, "out", $Immediate(EA, Val, "data")).
+
+evaluate_val($Empty_val(), $Number(0), 0, "data", "null").
+
+// value from value edge
+evaluate_val(Dst, Exp, EA, Type, Reason):-
+    value_edge(Src, Dst, _),
+    evaluate_val(Src, Exp, EA, Type, Reason).
+
+// value from calc
+evaluate_val(Dst, Exp, EA, Type, "calc"):-
+    op_to_val(EA, _, _, _, Dst),
+    value_arithmetic_edge(Dst, Src1, Src2, Mult, Offset),
+    evaluate_val(Src1, Src1_exp, From1, Type1, _),
+    evaluate_val(Src2, Src2_exp, From2, Type2, _),
+    From1!=EA, From2!=EA,
+    simplify_exp($Add(Src1_exp, $Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset))), Exp),
+    (Type1="ptr",Type2=Type2,Type="ptr";
+    Type1=Type1,Type2="ptr",Type="ptr";
+    Type1="data",Type2="data",Type="data").
+
+counter_candidate(Val):-
+    instruction_get_operation(EA, Operation),
+    cmp_operation(Operation),
+    op_to_val(EA, _, _, "out", Val).
+
+counter_src(Val, Def):-
+    counter_candidate(Val),
+    value_def_used(Def, Val, _).
+    
+counter_src(Val, Def):-
+    counter_src(Val, Def1),
+    value_edge(Src, Def1, _),
+    value_def_used(Def, Src, _).
+
+loop_detected(Counter):-
+    evaluate_val(Counter, _, _, _, "calc"),
+    evaluate_val(Counter, _, _, _, Type),
+    Type!="calc".
+
+to_simplify(Exp):-
+    value_arithmetic_edge(_, _, Src2, Mult, _),
+    evaluate_val(Src2, Src2_exp, _, _, _),
+    Exp=$Mult(Src2_exp, $Number(Mult)).
+
+to_simplify(Exp):-
+    value_arithmetic_edge(_, _, Src2, Mult, Offset),
+    evaluate_val(Src2, Src2_exp, _, _, _),
+    Exp=$Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset)).
+
+to_simplify(Exp):-
+    op_to_val(EA, _, _, _, Dst),
+    value_arithmetic_edge(Dst, Src1, Src2, Mult, Offset),
+    evaluate_val(Src1, Src1_exp, From1, _, _),
+    evaluate_val(Src2, Src2_exp, From2, _, _),
+    From1!=EA, From2!=EA,
+    Exp=$Add(Src1_exp, $Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset))).
+
+to_simplify(Exp):-
+    address_expr(_, Exp).
+
+to_simplify(Exp):-
+    address_expr(_, $Add(_, Exp)).
+
+to_simplify(Exp):-
+    address_expr(_, $Add(_, $Add(Exp, _))).
+
+// reg_arithmetic_operation
+// evaluate_val([EA, Reg, 0, "calc"], Exp, "calc"):-
+//     code(EA),
+//     value_def_at(Def, EA),
+//     value_used_at(Used, EA),
+//     evaluate_val([EA, Reg1, 0, "reg"], Exp, _),
+//     reg_arithmetic_operation(EA, Reg, Reg1, 1, 0).
+
+// evaluate_val([EA, Reg, 0, "calc"], $Add(Exp, $Number(Offset)), "calc"):-
+//     code(EA),
+//     evaluate_val([EA, Reg1, 0, "reg"], Exp, _),
+//     reg_arithmetic_operation(EA, Reg, Reg1, 1, Offset),
+//     Offset != 0.
+
+// evaluate_val([EA, Reg, 0, "calc"], $Mult(Exp, $Number(Mult)), "calc"):-
+//     code(EA),
+//     evaluate_val([EA, Reg1, 0, "reg"], Exp, _),
+//     reg_arithmetic_operation(EA, Reg, Reg1, Mult, 0),
+//     Mult != 1.
+
+// evaluate_val([EA, Reg, 0, "calc"], $Add($Mult(Exp, $Number(Mult)), $Number(Offset)), Type, "calc"):-
+//     code(EA),
+//     evaluate_val([EA, Reg1, 0, "reg"], Exp, Type, _),
+//     reg_arithmetic_operation(EA, Reg, Reg1, Mult, Offset).
+
+// reg_reg_arithmetic_operation

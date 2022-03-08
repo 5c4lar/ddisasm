@@ -69,28 +69,14 @@
 .output address_expr_simplified
 .decl op_to_val(EA:address, Op:operand_code, Idx:unsigned, Direction:symbol, Type:symbol, Val:value_desc)
 .output op_to_val
-.decl evaluate_val(Val:value_desc, Exp:expression, From:src_desc, Height:unsigned, Type:symbol, Reason:symbol) //choice-domain (Val, From)
+.decl evaluate_val(Val:value_desc, Exp:expression, From:src_desc, Depend:depend, Type:symbol, Reason:symbol) choice-domain (Val, From)
 .output evaluate_val
 .decl value_depend(Val:value_desc, Src: src_desc, Depend:depend) choice-domain (Val, Src)
 .output value_depend
-// .decl symbolize_val(Val:value_desc)
-// .output symbolize_val
 .decl to_simplify(Exp:expression)
 .output to_simplify
 .decl simplify_exp(Exp:expression, Res:expression)
 .output simplify_exp
-// .decl block_after(Block:address, Block_after:address)
-// .output block_after
-// .decl loop_entry(Block:address)
-// .output loop_entry
-// .decl block_in_loop(Block:address, Block_entry:address, Block_exit:address)
-// .output block_in_loop
-// .decl loop_exit(Block:address)
-// .output loop_exit
-// .decl value_defined_in_loop(Val:value_desc)
-// .output value_defined_in_loop
-// .decl value_depend(Val:value_desc, Root:value_desc)
-// .output value_depend
 .decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Address: expression)
 .output value_used_for_address
 .decl value_type(Address:expression, Type:type_desc)

@@ -83,12 +83,6 @@ simplify_exp(Exp, Res):-
     Exp=$Mult($Number(x), $Number(Mult)),
     Res=$Number(x*Mult).
 
-// simplify_exp(Exp, Res):-
-//     to_simplify(Exp),
-//     Exp=$Mult($Symbolized(Src), $Number(Mult)),
-//     Mult != 1,
-//     Res=$Mult($Symbolized(Src), $Number(Mult)).
-
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
     (Exp=$Add($Address(x), Exp_offset),
@@ -97,9 +91,6 @@ simplify_exp(Exp, Res):-
     Exp=$Add($Symbolic(x, y), Exp_offset),
     (Res=$Add($Symbolic(x, y), Res_offset),Res_offset!=$Number(0);
     Res=$Symbolic(x, y), Res_offset=$Number(0))),
-    // Exp=$Add($Symbolized(Src), Exp_offset),
-    // (Res=$Add($Symbolized(Src), Res_offset),Res_offset!=$Number(0);
-    // Res=$Symbolized(Src), Res_offset=$Number(0))),
     simplify_exp(Exp_offset, Res_offset).
 
 simplify_exp(Exp, Res):-
@@ -108,8 +99,6 @@ simplify_exp(Exp, Res):-
     Res=$Add($Address(x), Res_offset);
     Exp=$Add(Exp_offset, $Symbolic(x, y)),
     Res=$Add($Symbolic(x, y), Res_offset)),
-    // Exp=$Add(Exp_offset, $Symbolized(Src)),
-    // Res=$Add($Symbolized(Src), Res_offset)),
     simplify_exp(Exp_offset, Res_offset).
 
 simplify_exp(Exp, Res):-
@@ -144,17 +133,19 @@ simplify_exp(Exp, Res):-
     (Type="func";Type="symbol";Type="cmp").
 
 // value from function return
-evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], 0, Type, "func"):-
+evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], Depend, Type, "func"):-
     direct_call(EA_call, Callee),
     return_val_reg(Reg),
     cfg_edge_to_symbol(Callee, Function, _),
+    value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], Depend),
     function_prototype(Function, 0, Type).
     // Type="ptr".
 
-evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], 0, "unkown", "func"):-
+evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], Depend, "unkown", "func"):-
     direct_call(EA_call, Callee),
     return_val_reg(Reg),
     cfg_edge_to_symbol(Callee, Function, _),
+    value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], Depend),
     !function_prototype(Function, 0, _).
 
 // evaluate_val($Register(EA_def, Reg, Index, "reg", "in"), $Symbolic(EA, Function)):-
@@ -164,69 +155,58 @@ evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Functio
 //     function_prototype(Function, Idx, Type).
 
 // value from global_ptr
-evaluate_val(Val, $Address(Address), [EA, 0, 0], 0, "ptr", "symbol"):-
+evaluate_val(Val, $Address(Address), [EA, 0, 0], Depend, "ptr", "symbol"):-
     op_to_val(EA, _, _, "in", _, Val),
     best_symexpr_symbol(as(Address, address), _, _),
     !is_xor_reset(EA),
     Address != 0,
+    value_depend(Val, [EA, 0, 0], Depend),
     value_reg(EA, _, EA, "NONE", 0, Address, _).
 
 // value of frame pointer
-evaluate_val($Register(EA, Reg, Index, "reg", "in"), $Symbolic(EA, "frame_pointer"), [EA, 0, 0], 0, "ptr", "frame"):-
+evaluate_val($Register(EA, Reg, Index, "reg", "in"), $Symbolic(EA, "frame_pointer"), [EA, 0, 0], Depend, "ptr", "frame"):-
     value_def($Register(EA, Reg, Index, "reg", "in")),
+    value_depend($Register(EA, Reg, Index, "reg", "in"), [EA, 0, 0], Depend),
     frame_pointer(Reg).
 
-// mov from immediate
-evaluate_val(DstVal, $Number(Val), [EA, 0, 0], 0, "data", "immediate"):-
-    mov(EA),
-    instruction_get_dest_op(EA, Index1, Op1),
-    op_to_val(EA, Op1, Index1, "in", _, DstVal),
-    instruction_get_src_op(EA, Index2, Op2),
-    op_to_val(EA, Op2, Index2, "out", _, $Immediate(EA, Val, "data")).
-
-// calc with immediate
-evaluate_val($Immediate(EA, Val, "data"), $Number(Val), [EA, 0, 0], 0, "data", "immediate"):-
-    !mov(EA),
+// immediate
+evaluate_val($Immediate(EA, Val, "data"), $Number(Val), [EA, 0, 0], Depend, "data", "immediate"):-
+    value_depend($Immediate(EA, Val, "data"), [EA, 0, 0], Depend),
     op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")).
 
 // used from memory
-evaluate_val(Val, Val_exp, Src_def, Height, Type, "indirect"):-
+evaluate_val(Val, Val_exp, Src_def, Depend, Type, "indirect"):-
     op_to_val(_, _, _, "out", _, Val),
     address_expr_simplified(Val, Exp),
     op_to_val(_, _, _, "in", _, Src),
     address_expr_simplified(Src, Exp),
-    evaluate_val(Src, Val_exp, Src_def, Height, Type, _),
+    evaluate_val(Src, Val_exp, Src_def, Depend, Type, _),
     !value_def_used(_, Val, _).
 
-evaluate_val($Empty_val(), $Number(0), [0, 0, 0], 0, "data", "null").
+evaluate_val($Empty_val(), $Number(0), [0, 0, 0], $Leaf(0), "data", "null").
 
 // value from def_used
-evaluate_val(Used, Exp, Src, Height, Type, Reason):-
+evaluate_val(Used, Exp, Src, Depend, Type, Reason):-
     value_def_used(Def, Used, _),
-    evaluate_val(Def, Exp, Src, Height, Type, Reason).
+    evaluate_val(Def, Exp, Src, Depend, Type, Reason).
 
 // value from value edge
-evaluate_val(Dst, Exp, Src_def, Height, Type, Reason):-
+evaluate_val(Dst, Exp, Src_def, Depend, Type, Reason):-
     value_edge(Src, Dst, _),
-    evaluate_val(Src, Exp, Src_def, Height, Type, Reason).
+    evaluate_val(Src, Exp, Src_def, Depend, Type, Reason).
 
-evaluate_val():-
-    value_depend()
 // value from calc
-// evaluate_val(Dst, Exp, [EA, EA1, EA2], h, Type, "calc"):-
-//     op_to_val(EA, _, _, _, _, Dst),
-//     value_arithmetic_edge(Dst, Src1, Src2, Mult, Offset),
-//     evaluate_val(Src1, Src1_exp, [EA1, _, _], h1, Type1, _),
-//     evaluate_val(Src2, Src2_exp, [EA2, _, _], h2, Type2, _),
-//     h = max(h1, h2) + 1,
-//     simplify_exp($Add(Src1_exp, $Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset))), Exp),
-//     (Type1="ptr",Type2=Type2,Type="ptr";
-//     Type1=Type1,Type2="ptr",Type="ptr";
-//     Type1=Type2,Type="data").
-
-// evaluate_val(Dst, Exp1, [EA, EA1, EA2], h1, Type1, _) <= evaluate_val(Dst, _, [EA, EA1, EA2], h2, _, _):-
-//     h2 <= h1.
-
+evaluate_val(Dst, Exp, [EA, EA1, EA2], $Node(EA, h, Depend1, Depend2), Type, "calc"):-
+    op_to_val(EA, _, _, _, _, Dst),
+    value_arithmetic_edge(Dst, Src1, Src2, Mult, Offset),
+    evaluate_val(Src1, Src1_exp, [EA1, _, _], Depend1, Type1, _),
+    evaluate_val(Src2, Src2_exp, [EA2, _, _], Depend2, Type2, _),
+    value_depend(Dst, [EA, EA1, EA2], $Node(EA, h, Depend1, Depend2)),
+    simplify_exp($Add(Src1_exp, $Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset))), Exp),
+    (Type1="ptr",Type2=Type2,Type="ptr";
+    Type1=Type1,Type2="ptr",Type="ptr";
+    Type1=Type2,Type="data").
+    
 to_simplify(Exp):-
     value_arithmetic_edge(_, _, Src2, Mult, _),
     evaluate_val(Src2, Src2_exp, _, _, _, _),

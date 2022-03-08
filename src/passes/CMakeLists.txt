@@ -130,7 +130,7 @@ set(STRUCT_RECOVERY_DATALOG_SOURCES
   datalog/struct_recovery/value_type.dl
   datalog/struct_recovery/expression.dl
   datalog/struct_recovery/op_to_val.dl
-  datalog/struct_recovery/loop_detect.dl)
+  datalog/struct_recovery/depend.dl)
 
 set(STRUCT_RECOVERY_CPP
     "${CMAKE_BINARY_DIR}/src/passes/souffle_struct_recovery.cpp")

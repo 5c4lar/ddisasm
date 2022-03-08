@@ -1,4 +1,4 @@
-op_to_val(EA, Op, Index, Direction, $Memory(EA, Base, Idx, Mult, Offset, Direction)):-
+op_to_val(EA, Op, Index, Direction, "mem", $Memory(EA, Base, Idx, Mult, Offset, Direction)):-
     code(EA),
     instruction_get_operation(EA, Operation),
     Operation!="LEA",
@@ -8,25 +8,25 @@ op_to_val(EA, Op, Index, Direction, $Memory(EA, Base, Idx, Mult, Offset, Directi
     !pc_register(Base),
     Base!="NONE".
 
-op_to_val(EA, Op, Index, "idx", $Register(EA, Reg, Index, "idx", "out")):-
+op_to_val(EA, Op, Index, "idx", "reg", $Register(EA, Reg, Index, "idx", "out")):-
     code(EA),
     instruction_get_op(EA,Index,Op),
     op_indirect(Op,_,_,Reg_orig,_,_,_),
     track_register(Reg_orig,Reg).
 
-op_to_val(EA, Op, Index, "base", $Register(EA, Reg, Index, "base", "out")):-
+op_to_val(EA, Op, Index, "base", "reg", $Register(EA, Reg, Index, "base", "out")):-
     code(EA),
     instruction_get_op(EA,Index,Op),
     op_indirect(Op,_,Reg_orig,_,_,_,_),
     track_register(Reg_orig,Reg).
 
-op_to_val(EA, Op, Index, Direction, $Register(EA, Reg, Index, "reg", Direction)):-
+op_to_val(EA, Op, Index, Direction, "reg", $Register(EA, Reg, Index, "reg", Direction)):-
     code(EA),
     (instruction_get_src_op(EA, Index, Op),Direction="out";
      instruction_get_dest_op(EA, Index, Op),Direction="in"),
     op_regdirect_contains_reg(Op, Reg).
 
-op_to_val(EA, Op, Index, "out", $Immediate(EA, Val, "data")):-
+op_to_val(EA, Op, Index, "out", "imm", $Immediate(EA, Val, "data")):-
     code(EA),
     instruction_get_operation(EA, Operation),
     !jump_operation(Operation),
@@ -34,7 +34,7 @@ op_to_val(EA, Op, Index, "out", $Immediate(EA, Val, "data")):-
     instruction_get_op(EA, Index, Op),
     op_immediate(Op, Val).
 
-op_to_val(EA, Op, Index, Direction, $Global(EA, as(Address, address), Idx, Mult, Direction)):-
+op_to_val(EA, Op, Index, Direction, "global", $Global(EA, as(Address, address), Idx, Mult, Direction)):-
     code(EA),
     (instruction_get_src_op(EA, Index, Op),Direction="out";
      instruction_get_dest_op(EA, Index, Op),Direction="in"),
@@ -43,7 +43,7 @@ op_to_val(EA, Op, Index, Direction, $Global(EA, as(Address, address), Idx, Mult,
     next(EA, PC),
     Address = as(Offset, number) + as(PC, number).
 
-op_to_val(EA, Op, Index, Direction, $Global(EA, as(Offset, address), Idx, Mult, Direction)):-
+op_to_val(EA, Op, Index, Direction, "global", $Global(EA, as(Offset, address), Idx, Mult, Direction)):-
     code(EA),
     Offset != 0,
     (instruction_get_src_op(EA, Index, Op),Direction="out";

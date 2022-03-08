@@ -17,6 +17,8 @@ value_used_at($Memory(EA, Base, Idx, Mult, Offset, "out"), EA):-
     value_used($Memory(EA, Base, Idx, Mult, Offset, "out")).
 value_used_at($Global(EA, Address, Idx, Mult, "out"), EA):-
     value_used($Global(EA, Address, Idx, Mult, "out")).
+value_used_at($Immediate(EA, Val, "data"), EA):-
+    value_used($Immediate(EA, Val, "data")).
 .decl value_used_as(Val: value_desc, Type:symbol)
 value_used_as($Register(EA, Reg, Idx, Type, "out"), Type):-
     value_used($Register(EA, Reg, Idx, Type, "out")).
@@ -65,7 +67,7 @@ function_reg_arg(EA, Callee, Arg):-
 value_def(Val):-
     code(EA),
     instruction_get_dest_op(EA,Index,DestOp),
-    op_to_val(EA, DestOp, Index, "in", Val).
+    op_to_val(EA, DestOp, Index, "in", _, Val).
 
 value_def($Register(EA, Reg, 0, "reg", "in")):-
     code(EA),
@@ -76,24 +78,13 @@ value_def($Register(EA, Reg, 0, "reg", "in")):-
 value_used(Val):-
     code(EA),
     instruction_get_src_op(EA,Index,SrcOp),
-    op_to_val(EA, SrcOp, Index, "out", Val).
+    op_to_val(EA, SrcOp, Index, "out", _, Val).
 
 value_used(Val):-
     code(EA),
     instruction_get_op(EA,Index,Op),
-    op_to_val(EA, Op, Index, Type, Val),
+    op_to_val(EA, Op, Index, Type, _, Val),
     (Type="base";Type="idx").
-// value_used($Register(EA, Reg, Idx, "base", "out")):-
-//     code(EA),
-//     instruction_get_op(EA,Idx,Op),
-//     op_indirect(Op,_,Reg,_,_,_,_),
-//     Reg != "NONE".
-
-// value_used($Register(EA, Reg, Idx, "idx", "out")):-
-//     code(EA),
-//     instruction_get_op(EA,Idx,Op),
-//     op_indirect(Op,_,_,Reg,_,_,_),
-//     Reg != "NONE".
 
 loc_killed(Loc, EA):-
     value_def_at(Val, EA_def),

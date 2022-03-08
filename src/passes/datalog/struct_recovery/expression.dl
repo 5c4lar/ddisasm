@@ -58,71 +58,92 @@ address_expr(Val, Exp):-
     Direction=Direction,
     (
         Idx="NONE", Mult=1,
-        Exp=$Address(as(Address, number));
+        Exp=$Address(Address);
         Idx!="NONE",
         op_to_val(EA, _, Index, "idx", _, Idx_val),
         evaluate_val(Idx_val, Idx_exp, _, _, _, _),
-        Exp=$Add($Address(as(Address, number)), $Mult(Idx_exp, $Number(Mult)))
+        Exp=$Add($Address(Address), $Mult(Idx_exp, $Number(Mult)))
     ).
 
 address_expr_simplified(Val, Exp):-
     address_expr(Val, Exp_orig),
     simplify_exp(Exp_orig, Exp).
-    
+
+// value source
 simplify_exp(Exp, Exp):-
     evaluate_val(_, Exp, _, _, _, Type),
     (Type="func";Type="symbol";Type="frame";Type="immediate";Type="null").
 
+simplify_exp(Exp, Exp):-
+    to_simplify(Exp),
+    Exp=$Number(x),
+    x=x.
+
+// global address
+simplify_exp(Exp, Exp):-
+    to_simplify($Address(Address)),
+    Exp=$Address(Address).
+
+// Add two numbers
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    Exp=$Add($Number(x), $Number(y)),
+    Exp=$Add(N1, N2),
+    simplify_exp(N1, $Number(x)),
+    simplify_exp(N2, $Number(y)),
     Res=$Number(x+y).
 
+// Mult tow numbers
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    Exp=$Mult($Number(x), $Number(Mult)),
-    Res=$Number(x*Mult).
+    Exp=$Mult(N1, N2),
+    simplify_exp(N1, $Number(x)),
+    simplify_exp(N2, $Number(y)),
+    Res=$Number(x*y).
 
+// Add Address to number
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    (Exp=$Add($Address(x), Exp_offset),
+    Exp=$Add(N1, N2),
+    simplify_exp(N2, Res_offset),
+    (simplify_exp(N1, $Address(x)),
     (Res=$Add($Address(x), Res_offset),Res_offset!=$Number(0);
     Res=$Address(x), Res_offset=$Number(0));
-    Exp=$Add($Symbolic(x, y), Exp_offset),
+    simplify_exp(N1, $Symbolic(x, y)),
     (Res=$Add($Symbolic(x, y), Res_offset),Res_offset!=$Number(0);
-    Res=$Symbolic(x, y), Res_offset=$Number(0))),
-    simplify_exp(Exp_offset, Res_offset).
+    Res=$Symbolic(x, y), Res_offset=$Number(0))).
 
+// Swap
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    (Exp=$Add(Exp_offset, $Address(x)),
+    Exp=$Add(N1, N2),
+    simplify_exp(N1, Res_offset),
+    (simplify_exp(N2, $Address(x)),
     Res=$Add($Address(x), Res_offset);
-    Exp=$Add(Exp_offset, $Symbolic(x, y)),
-    Res=$Add($Symbolic(x, y), Res_offset)),
-    simplify_exp(Exp_offset, Res_offset).
+    simplify_exp(N2, $Symbolic(x, y)),
+    Res=$Add($Symbolic(x, y), Res_offset)).
 
+// Absorb
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    (Exp=$Add(Exp1, $Number(0));
-    Exp=$Mult(Exp1, $Number(1))),
+    (Exp=$Add(N1, N2),
+    simplify_exp(N2, $Number(0));
+    Exp=$Mult(N1, N2),
+    simplify_exp(N2, $Number(1))),
+    simplify_exp(N1, Res).
+
+// Absorb left
+simplify_exp(Exp, Res):-
+    to_simplify(Exp),
+    Exp=$Add(N1, Exp1),
+    simplify_exp(N1, $Number(0)),
     simplify_exp(Exp1, Res).
 
+// Add Offset
 simplify_exp(Exp, Res):-
     to_simplify(Exp),
-    Exp=$Add($Number(0), Exp1),
-    simplify_exp(Exp1, Res).
-
-simplify_exp(Exp, Res):-
-    to_simplify(Exp),
-    (Exp=$Add($Number(x), Exp1);
-    Exp=$Add(Exp1, $Number(x))),
-    simplify_exp(Exp1, $Number(y)),
-    Res=$Number(x+y).
-
-simplify_exp(Exp, Res):-
-    to_simplify(Exp),
-    (Exp=$Add($Number(x), Exp1);
-    Exp=$Add(Exp1, $Number(x))),
+    (Exp=$Add(N1, Exp1);
+    Exp=$Add(Exp1, N1)),
+    simplify_exp(N1, $Number(x)),
     x!=0,
     simplify_exp(Exp1, Res1),
     (Res1=$Add(Symbol, $Number(y)),
@@ -130,7 +151,7 @@ simplify_exp(Exp, Res):-
     Res1=Symbol,
     Res=$Add(Symbol, $Number(x))),
     evaluate_val(_, Symbol, _, _, _, Type),
-    (Type="func";Type="symbol";Type="cmp").
+    (Type="func";Type="symbol").
 
 // value from function return
 evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], Depend, Type, "func"):-
@@ -141,12 +162,24 @@ evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Functio
     function_prototype(Function, 0, Type).
     // Type="ptr".
 
+evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], Depend, "ptr", "func"):-
+    direct_call(EA_call, Callee),
+    return_val_reg(Reg),
+    cfg_edge_to_symbol(Callee, Function, _),
+    value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], Depend),
+    ptr_candidate(EA_call),
+    !function_prototype(Function, 0, _).
+
 evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Function), [EA_call, 0, 0], Depend, "unkown", "func"):-
     direct_call(EA_call, Callee),
     return_val_reg(Reg),
     cfg_edge_to_symbol(Callee, Function, _),
     value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], Depend),
     !function_prototype(Function, 0, _).
+
+evaluate_val(Val, Sym, Src, Depend, "unkown", "func") <=
+evaluate_val(Val, Sym, Src, Depend, "ptr", "func") :-
+    Val=Val.
 
 // evaluate_val($Register(EA_def, Reg, Index, "reg", "in"), $Symbolic(EA, Function)):-
 //     function_reg_arg(EA, Callee, $Register(EA_def, Reg, Index, "reg", "in")),
@@ -155,13 +188,20 @@ evaluate_val($Register(EA_call, Reg, 0, "reg", "in"), $Symbolic(EA_call, Functio
 //     function_prototype(Function, Idx, Type).
 
 // value from global_ptr
-evaluate_val(Val, $Address(Address), [EA, 0, 0], Depend, "ptr", "symbol"):-
+evaluate_val(Val, $Address(as(Address, address)), [EA, 0, 0], Depend, "ptr", "symbol"):-
     op_to_val(EA, _, _, "in", _, Val),
-    best_symexpr_symbol(as(Address, address), _, _),
-    !is_xor_reset(EA),
-    Address != 0,
-    value_depend(Val, [EA, 0, 0], Depend),
-    value_reg(EA, _, EA, "NONE", 0, Address, _).
+    op_to_val(EA, _, _, "out", "global", $Global(_, Address, _, _, _)),
+    instruction_get_operation(EA, Operation),
+    Operation="LEA",
+    value_depend(Val, [EA, 0, 0], Depend).
+    
+// evaluate_val(Val, $Address(as(Address, address)), [EA, 0, 0], Depend, "ptr", "symbol"):-
+//     op_to_val(EA, _, _, "in", _, Val),
+//     best_symexpr_symbol(as(Address, address), _, _),
+//     !is_xor_reset(EA),
+//     Address != 0,
+//     value_depend(Val, [EA, 0, 0], Depend),
+//     value_reg(EA, _, EA, "NONE", 0, Address, _).
 
 // value of frame pointer
 evaluate_val($Register(EA, Reg, Index, "reg", "in"), $Symbolic(EA, "frame_pointer"), [EA, 0, 0], Depend, "ptr", "frame"):-
@@ -173,6 +213,16 @@ evaluate_val($Register(EA, Reg, Index, "reg", "in"), $Symbolic(EA, "frame_pointe
 evaluate_val($Immediate(EA, Val, "data"), $Number(Val), [EA, 0, 0], Depend, "data", "immediate"):-
     value_depend($Immediate(EA, Val, "data"), [EA, 0, 0], Depend),
     op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")).
+
+evaluate_val($Immediate(EA, Val, "data"), $Symbolic(EA, "nullptr"), [EA, 0, 0], Depend, "ptr", "immediate"):-
+    value_depend($Immediate(EA, Val, "data"), [EA, 0, 0], Depend),
+    ptr_candidate(EA),
+    op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")),
+    Val=0.
+
+evaluate_val(Val, $Number(0), Src, Depend, "data", "immediate") <= 
+evaluate_val(Val, $Symbolic(EA, "nullptr"), Src, Depend, "ptr", "immediate"):-
+    ptr_candidate(EA).
 
 // used from memory
 evaluate_val(Val, Val_exp, Src_def, Depend, Type, "indirect"):-
@@ -208,6 +258,16 @@ evaluate_val(Dst, Exp, [EA, EA1, EA2], $Node(EA, h, Depend1, Depend2), Type, "ca
     Type1=Type2,Type="data").
     
 to_simplify(Exp):-
+    value_arithmetic_edge(_, Src1, _, _, _),
+    evaluate_val(Src1, Src1_exp, _, _, _, _),
+    Exp=Src1_exp.
+
+to_simplify(Exp):-
+    value_arithmetic_edge(_, _, Src2, _, _),
+    evaluate_val(Src2, Src2_exp, _, _, _, _),
+    Exp=Src2_exp.
+
+to_simplify(Exp):-
     value_arithmetic_edge(_, _, Src2, Mult, _),
     evaluate_val(Src2, Src2_exp, _, _, _, _),
     Exp=$Mult(Src2_exp, $Number(Mult)).
@@ -227,8 +287,19 @@ to_simplify(Exp):-
     address_expr(_, Exp).
 
 to_simplify(Exp):-
+    address_expr(_, $Add(Exp, _)).
+
+to_simplify(Exp):-
     address_expr(_, $Add(_, Exp)).
 
 to_simplify(Exp):-
     address_expr(_, $Add(_, $Add(Exp, _))).
 
+to_simplify(Exp):-
+    address_expr(_, $Add(_, $Add(_, Exp))).
+
+arg_value(EA_call, Function, Idx, $Register(EA_def, Reg, Index, "reg", "in"), Val):-
+    function_reg_arg(EA_call, Callee, $Register(EA_def, Reg, Index, "reg", "in")),
+    arg_idx(Reg, Idx),
+    cfg_edge_to_symbol(Callee, Function, _),
+    evaluate_val($Register(EA_def, Reg, Index, "reg", "in"), Val, _, _, _, _).

@@ -31,7 +31,7 @@
                  | GlobalLoc {Address:address, Idx:symbol, Mult:number}
 
 .type expression = Number {x: number}
-                 | Address {x: number}
+                 | Address {x: address}
                  | Symbolic {x: address, y: symbol}
                  | Symbolized{x: src_desc}
                 //  | Calc {Base: value_desc, Idx: value_desc, Mult: number, Offset: number}
@@ -59,6 +59,8 @@
 // detect function args
 .decl function_reg_arg(EA_call:address, Callee:address, Arg:value_desc)
 .output function_reg_arg
+.decl arg_value(EA_call:address, Function:symbol, Idx:unsigned, Arg:value_desc, Val:expression)
+.output arg_value
 .decl value_edge(Src:value_desc, Dst:value_desc, Type:symbol)
 .output value_edge
 .decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Mult:number, Offset:number)
@@ -69,10 +71,12 @@
 .output address_expr_simplified
 .decl op_to_val(EA:address, Op:operand_code, Idx:unsigned, Direction:symbol, Type:symbol, Val:value_desc)
 .output op_to_val
-.decl evaluate_val(Val:value_desc, Exp:expression, From:src_desc, Depend:depend, Type:symbol, Reason:symbol) choice-domain (Val, From)
+.decl evaluate_val(Val:value_desc, Exp:expression, From:src_desc, Depend:depend, Type:symbol, Reason:symbol) //choice-domain (Val, From)
 .output evaluate_val
 .decl value_depend(Val:value_desc, Src: src_desc, Depend:depend) choice-domain (Val, Src)
 .output value_depend
+.decl ptr_candidate(EA:address)
+.output ptr_candidate
 .decl to_simplify(Exp:expression)
 .output to_simplify
 .decl simplify_exp(Exp:expression, Res:expression)
@@ -155,6 +159,88 @@ arg_idx("RDX", 3).
 arg_idx("RCX", 4).
 arg_idx("R8", 5).
 arg_idx("R9", 6).
+.decl reg_size(Reg:symbol, Size:unsigned)
+reg_size("AL", 1).
+reg_size("AX", 2).
+reg_size("EAX",4).
+reg_size("RAX",8).
+
+reg_size("BL", 1).
+reg_size("BX", 2).
+reg_size("EBX",4).
+reg_size("RBX",8).
+
+reg_size("CL", 1).
+reg_size("CX", 2).
+reg_size("ECX",4).
+reg_size("RCX",8).
+
+reg_size("DL", 1).
+reg_size("DX", 2).
+reg_size("EDX",4).
+reg_size("RDX",8).
+
+reg_size("DI", 1).
+reg_size("DIL", 2).
+reg_size("EDI",4).
+reg_size("RDI",8).
+
+reg_size("SI", 1).
+reg_size("SIL", 2).
+reg_size("ESI",4).
+reg_size("RSI",8).
+
+reg_size("BP",1).
+reg_size("BPL",2).
+reg_size("EBP",4).
+reg_size("RBP",8).
+
+// track register for variable analysis
+reg_size("SP",1).
+reg_size("SPL",2).
+reg_size("ESP",4).
+reg_size("RSP",8).
+
+reg_size("R8",8).
+reg_size("R8D",4).
+reg_size("R8W",2).
+reg_size("R8B",1).
+
+reg_size("R9",8).
+reg_size("R9D",4).
+reg_size("R9W",2).
+reg_size("R9B",1).
+
+reg_size("R10",8).
+reg_size("R10D",4).
+reg_size("R10W",2).
+reg_size("R10B",1).
+
+reg_size("R11",8).
+reg_size("R11D",4).
+reg_size("R11W",2).
+reg_size("R11B",1).
+
+reg_size("R12",8).
+reg_size("R12D",4).
+reg_size("R12W",2).
+reg_size("R12B",1).
+
+reg_size("R13",8).
+reg_size("R13D",4).
+reg_size("R13W",2).
+reg_size("R13B",1).
+
+reg_size("R14",8).
+reg_size("R14D",4).
+reg_size("R14W",2).
+reg_size("R14B",1).
+
+reg_size("R15",8).
+reg_size("R15D",4).
+reg_size("R15W",2).
+reg_size("R15B",1).
+
 
 // TODO: interprocedural global def used
 // TODO: solve adjacent global objects

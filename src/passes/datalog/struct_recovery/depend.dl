@@ -1,0 +1,95 @@
+.decl depend_addr(N:depend, EA:address) inline
+// depend_addr($Node(EA, h, l, r), EA):-
+//     value_depend(_, _, $Node(EA, h, l, r)).
+
+// depend_addr($Leaf(EA), EA):-
+//     value_depend(_, _, $Leaf(EA)).
+depend_addr(N, EA):-
+    value_depend(_, [EA, _, _], N).
+    
+.decl addr_in_tree(N:depend, EA:address)
+addr_in_tree(N, EA):-
+    depend_addr(N, EA).
+
+addr_in_tree($Node(x, h, l, r), EA):-
+    value_depend(_, _, $Node(x, h, l, r)),
+    l=l, r=r,
+    (addr_in_tree(l, EA);
+    addr_in_tree(r, EA)).
+
+// .decl depend_depth(N:depend, depth:unsigned)
+// depend_depth($Leaf(EA), 0):-
+//     value_depend(_, $Leaf(EA)).
+// depend_depth($Node(EA, h, l, r), depth):-
+//     value_depend(_, $Node(EA, h, l, r)),
+//     depend_depth(l, depth1),
+//     depend_depth(r, depth2),
+//     depth = max(depth1, depth2)+1.
+// .output depend_depth
+
+value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], $Leaf(EA_call)):-
+    direct_call(EA_call, _),
+    return_val_reg(Reg).
+
+value_depend($Register(EA, Reg, 0, "reg", "in"), [EA, 0, 0], $Leaf(EA)):-
+    best_symexpr_symbol(as(Address, address), _, _),
+    !is_xor_reset(EA),
+    Address != 0,
+    value_reg(EA, Reg, EA, "NONE", 0, Address, _).
+
+value_depend($Register(EA, Reg, Index, "reg", "in"), [EA, 0, 0], $Leaf(EA)):-
+    value_def($Register(EA, Reg, Index, "reg", "in")),
+    frame_pointer(Reg).
+
+value_depend(DstVal, [EA, 0, 0], $Leaf(EA)):-
+    mov(EA),
+    instruction_get_dest_op(EA, Index1, Op1),
+    op_to_val(EA, Op1, Index1, "in", _, DstVal),
+    instruction_get_src_op(EA, Index2, Op2),
+    op_to_val(EA, Op2, Index2, "out", _, $Immediate(EA, _, "data")).
+
+value_depend(Used, From, Depend):-
+    value_def_used(Def, Used, _),
+    value_depend(Def, From, Depend).
+
+value_depend($Immediate(EA, Val, "data"), [EA, 0, 0], $Leaf(EA)):-
+    !mov(EA),
+    op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")).
+
+value_depend(Val, From, Depend):-
+    op_to_val(_, _, _, "out", _, Val),
+    address_expr_simplified(Val, Exp),
+    op_to_val(_, _, _, "in", _, Src),
+    address_expr_simplified(Src, Exp),
+    value_depend(Src, From, Depend),
+    !value_def_used(_, Val, _).
+
+value_depend($Empty_val(), [0, 0, 0], $Leaf(0)).
+
+value_depend(Dst, From, Depend):-
+    value_edge(Src, Dst, _),
+    value_depend(Src, From, Depend).
+
+value_depend(Dst, [EA, EA1, EA2], $Node(EA, h, Depend1, Depend2)):-
+    op_to_val(EA, _, _, _, _, Dst),
+    value_arithmetic_edge(Dst, Src1, Src2, _, _),
+    (value_depend(Src1, [EA1, _, _], $Node(EA1, h1, l1, r1)), Depend1=$Node(EA1, h1, l1, r1);
+    value_depend(Src1,  [EA1, _, _], $Leaf(x)),h1=0,Depend1=$Leaf(x)),
+    (value_depend(Src2,  [EA2, _, _], $Node(EA2, h2, l2, r2)),Depend2=$Node(EA2, h2, l2, r2);
+    value_depend(Src2,  [EA2, _, _], $Leaf(y)),h2=0,Depend2=$Leaf(y)),
+    h = max(h1, h2) + 1.
+
+// value_depend(Val,  [EA, EA1, EA2], $Node(EA, x, l, r)) <= value_depend(Val, [EA, EA1, EA2], $Node(EA, y, _, _)):-
+//     y <= x.
+
+// .decl deeper_depend(Depend1:depend, Depend2:depend)
+// deeper_depend(Depend1, Depend2):-
+//     depend_addr(Depend1, EA1),
+//     depend_addr(Depend2, EA2),
+//     depend_depth(Depend1, Depth1),
+//     depend_depth(Depend2, Depth2),
+//     EA1=EA2,
+//     Depth1 > Depth2.
+
+// value_depend(Val, Depend1) <= value_depend(Val, Depend2):-
+//     deeper_depend(Depend1, Depend2).

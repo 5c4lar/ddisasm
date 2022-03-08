@@ -12,12 +12,12 @@
 
 
 ///////////////////////////////////////////////////////////////////////////////
-
+.type field_desc = [Prev: field_desc, Offset: unsigned, Type: type_desc]
 .type type_desc  = Basic   {Size: unsigned, Type: symbol}
                  | Array   {Size: unsigned, Unit: type_desc}
                  | Pointer {Size: unsigned, Pointee: expression}
-                 | Struct  {Size: unsigned, Prev: type_desc, Offset: unsigned, Type: type_desc}
-                 | Union   {Size: unsigned, Prev: type_desc, Type: type_desc}
+                 | Struct  {Size: unsigned, Fields: field_desc}
+                 | Union   {Size: unsigned, Fields: field_desc}
                  | Empty_type   {}
 
 .type value_desc = Register {EA:address, Reg:symbol, Idx:unsigned, Type:symbol, Direction:symbol}
@@ -77,9 +77,9 @@
 .output to_simplify
 .decl simplify_exp(Exp:expression, Res:expression)
 .output simplify_exp
-.decl value_used_for_address(Mem:value_desc, Size:unsigned, Direction:symbol, Address: expression)
+.decl value_used_for_address(Mem:value_desc, Offset:number, Size:unsigned, Direction:symbol, Address: expression)
 .output value_used_for_address
-.decl value_type(Address:expression, Type:type_desc)
+.decl value_type(Address:expression, Offset:number, Type:type_desc)
 .output value_type
 // .decl value_must_def(Val:value_desc)
 // loc defined intra

@@ -124,9 +124,6 @@ set(STRUCT_RECOVERY_DATALOG_SOURCES
   datalog/struct_recovery/def_used.dl
   datalog/struct_recovery/input.dl
   datalog/struct_recovery/object.dl
-  datalog/struct_recovery/point_to.dl
-  datalog/struct_recovery/resolve_calc.dl
-  datalog/struct_recovery/value_root.dl
   datalog/struct_recovery/value_type.dl
   datalog/struct_recovery/expression.dl
   datalog/struct_recovery/op_to_val.dl

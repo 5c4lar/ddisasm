@@ -84,10 +84,6 @@ abi_intrinsic(EA,"_GLOBAL_OFFSET_TABLE_"):-
         inferred_special_symbol(EA,"_GLOBAL_OFFSET_TABLE_",_,_,_)
     ).
 
-inferred_special_symbol(EA,"_GLOBAL_OFFSET_TABLE_","LOCAL","NONE","Beg"):-
-    !symbol(_,_,_,_,_,_,_,_,"_GLOBAL_OFFSET_TABLE_"),
-    got_reference_pointer(EA).
-
 // GCC GOT-relative offset variant:
 //     add     eax, OFFSET FLAT:_GLOBAL_OFFSET_TABLE_
 symbolic_expr(EA+ImmediateOffset,4,"_GLOBAL_OFFSET_TABLE_",0):-
@@ -96,6 +92,18 @@ symbolic_expr(EA+ImmediateOffset,4,"_GLOBAL_OFFSET_TABLE_",0):-
     op_immediate_and_reg(EA,"ADD",Reg,Index,Value),
     instruction_immediate_offset(EA,Index,ImmediateOffset,_),
     Got = EA+as(Value,address).
+
+symbolic_expr(EA+ImmediateOffset,4,"_GLOBAL_OFFSET_TABLE_",0):-
+    relocation(EA+ImmediateOffset,"GOTPC",_,_,_,_,_),
+    op_immediate_and_reg(EA,"ADD",_,Index,_),
+    instruction_immediate_offset(EA,Index,ImmediateOffset,_).
+
+got_relative_operand(EA,Index,as(Dest,address)):-
+    relocation(EA+DisplacementOffset,"GOTOFF",Symbol,Addend,SymbolIndex,_,_),
+    relocation_adjustment_total(EA+DisplacementOffset,Adjustment),
+    symbol(TargetEA,_,_,_,_,_,_,SymbolIndex,Symbol),
+    Dest = as(TargetEA,number) + Addend + Adjustment,
+    instruction_displacement_offset(EA,Index,DisplacementOffset,_).
 
 // CLANG GOT-relative offset variant:
 //     add     ebx, offset _GLOBAL_OFFSET_TABLE_+(.Ltmp0-.L1$pb)

@@ -26,13 +26,37 @@ op_to_val(EA, Op, Index, Direction, "reg", $Register(EA, Reg, Index, "reg", Dire
      instruction_get_dest_op(EA, Index, Op),Direction="in"),
     op_regdirect_contains_reg(Op, Reg).
 
-op_to_val(EA, Op, Index, "out", "imm", $Immediate(EA, Val, "data")):-
+op_to_val(EA, Op, Index, "out", "imm", $Immediate(EA, Res, "data")):-
     code(EA),
     instruction_get_operation(EA, Operation),
     !jump_operation(Operation),
     !call_operation(Operation),
     instruction_get_op(EA, Index, Op),
-    op_immediate(Op, Val).
+    op_immediate(Op, Val),
+    (
+        instruction_memory_access_size(EA, _, Size);
+        instruction_get_dest_op(EA, _, Op_dst),
+        (
+            op_regdirect(Op_dst, Reg);
+            op_register_bitfield(Op_dst, Reg)
+        ),
+        reg_size(Reg, Size)
+    ),
+    (
+        Size=8, Res=Val;
+        Size=4, (
+            Val >= 0x80000000, Res=Val-0x100000000;
+            Val < 0x80000000, Res=Val
+        );
+        Size=2, (
+            Val >= 0x8000, Res=Val-0x10000;
+            Val < 0x8000, Res=Val
+        );
+        Size=1, (
+            Val >= 0x80, Res=Val-0x100;
+            Val < 0x80, Res=Val
+        )
+    ).
 
 op_to_val(EA, Op, Index, Direction, "global", $Global(EA, as(Address, address), Idx, Mult, Direction)):-
     code(EA),

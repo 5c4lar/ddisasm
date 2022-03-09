@@ -55,15 +55,6 @@ same_loc(Val1, Val2):-
 .decl loc_killed_after(Loc:value_loc, EA:address)
 // .output loc_killed_after
 
-function_reg_arg(EA, Callee, Arg):-
-    code(EA),
-    direct_call(EA, Callee),
-    value_block_last_def(EA, $Register(EA_def, Reg, Idx, "reg", "in")),
-    !value_def_used($Register(EA_def, Reg, Idx, "reg", "in"), _, _),
-    !stack_pointer(Reg),
-    !frame_pointer(Reg),
-    Arg=$Register(EA_def, Reg, Idx, "reg", "in").
-
 value_def(Val):-
     code(EA),
     instruction_get_dest_op(EA,Index,DestOp),
@@ -208,11 +199,27 @@ value_edge($Register(EA_def, Reg, Idx_def, Type_def, "in"), $Register(EA_used, R
     value_def_at($Register(EA_def, Reg, Idx_def, Type_def, "in"), EA_def),
     value_used_at($Register(EA_used, Reg, Idx, Type, "out"), EA_used).
 
+inferred_call(EA, Addr, Val, Depend, $Address(Addr)):-
+    op_to_val(EA, _, _, "out", _, Val),
+    evaluate_val(Val, $Address(Addr), _, Depend, _, _),
+    reg_call(EA, _).
+
+function_reg_arg(EA, Callee, Arg):-
+    code(EA),
+    (direct_call(EA, Callee);
+    inferred_call(EA, Callee, _, _, _)),
+    value_block_last_def(EA, $Register(EA_def, Reg, Idx, "reg", "in")),
+    !value_def_used($Register(EA_def, Reg, Idx, "reg", "in"), _, _),
+    !stack_pointer(Reg),
+    !frame_pointer(Reg),
+    Arg=$Register(EA_def, Reg, Idx, "reg", "in").
+
 value_edge(Def, Used, "caller"):-
     value_used_at(Used, EA),
     !value_def_used(_, Used, _),
     code_in_refined_block(EA, Block),
     in_function(Block, Function),
-    direct_call(EA_call, Function),
+    (direct_call(EA_call, Function);
+    inferred_call(EA_call, Function, _, _, _)),
     function_reg_arg(EA_call, Function, Def),
     same_loc(Def, Used).

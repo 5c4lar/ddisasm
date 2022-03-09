@@ -123,7 +123,6 @@ set(STRUCT_RECOVERY_DATALOG_SOURCES
   datalog/struct_recovery/struct_recovery.dl 
   datalog/struct_recovery/def_used.dl
   datalog/struct_recovery/input.dl
-  datalog/struct_recovery/object.dl
   datalog/struct_recovery/value_type.dl
   datalog/struct_recovery/expression.dl
   datalog/struct_recovery/op_to_val.dl

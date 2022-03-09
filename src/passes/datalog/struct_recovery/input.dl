@@ -28,10 +28,6 @@
 .decl op_register_bitfield(code:operand_code,register_name:register)
 .input op_register_bitfield
 
-// #include "../../datalog/arch/dl"
-// #include "../../datalog/arch/intel/arch_x86_64.dl"
-// .init arch = X86_64
-
 .decl store_operation(Operation:symbol)
 .input store_operation
 
@@ -292,3 +288,9 @@ is_xor_reset(EA):-
 
 .decl symbolic_data(EA:address,Size:unsigned,Value:address)
 .input symbolic_data
+
+.decl reg_call(src:address,reg:register)
+.input reg_call
+
+.decl indirect_call(src:address)
+.input indirect_call

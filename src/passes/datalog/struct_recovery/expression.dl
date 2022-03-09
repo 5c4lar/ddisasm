@@ -34,7 +34,7 @@ value_arithmetic_edge(DstVal, SrcVal1, SrcVal2, Mult, Offset):-
     (op_to_val(EA, Op1, 1, "base", _, SrcVal1),Reg1!="NONE";SrcVal1=$Empty_val(),Reg1="NONE"),
     (op_to_val(EA, Op1, 1, "idx", _, SrcVal2),Reg2!="NONE";SrcVal2=$Empty_val(),Reg2="NONE").
 
-address_expr(Val, Exp):-
+address_expr(Val, Ptr, Exp):-
     op_to_val(_, _, Index, _, _, Val),
     Val=$Memory(EA, Base, Idx, Mult, Offset, Direction),
     Base=Base, Idx=Idx, Direction=Direction,
@@ -46,18 +46,19 @@ address_expr(Val, Exp):-
         Idx_exp=$Number(0),Idx_type="data"
     ),
     (
-        Base_type="ptr",Idx_type="data",
+        Base_type="ptr",Idx_type="data",Ptr=Base_exp,
         Exp=$Add(Base_exp, $Add($Mult(Idx_exp, $Number(Mult)), $Number(Offset)));
-        Base_type="data",Idx_type="ptr", Mult=1,
+        Base_type="data",Idx_type="ptr", Mult=1,Ptr=Idx_exp,
         Exp=$Add(Idx_exp, $Add($Mult(Base_exp, $Number(1)), $Number(Offset)))
     ).
 
-address_expr(Val, Exp):-
+address_expr(Val, $Address(Address), Exp):-
     op_to_val(_, _, Index, _, _, Val),
     Val=$Global(EA, Address, Idx, Mult, Direction),
     Direction=Direction,
     (
         Idx="NONE", Mult=1,
+        Index=Index, EA=EA,
         Exp=$Address(Address);
         Idx!="NONE",
         op_to_val(EA, _, Index, "idx", _, Idx_val),
@@ -65,8 +66,8 @@ address_expr(Val, Exp):-
         Exp=$Add($Address(Address), $Mult(Idx_exp, $Number(Mult)))
     ).
 
-address_expr_simplified(Val, Exp):-
-    address_expr(Val, Exp_orig),
+address_expr_simplified(Val, Ptr, Exp):-
+    address_expr(Val, Ptr, Exp_orig),
     simplify_exp(Exp_orig, Exp).
 
 // value source
@@ -220,18 +221,36 @@ evaluate_val($Immediate(EA, Val, "data"), $Symbolic(EA, "nullptr"), [EA, 0, 0], 
     op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")),
     Val=0.
 
-evaluate_val(Val, $Number(0), Src, Depend, "data", "immediate") <= 
-evaluate_val(Val, $Symbolic(EA, "nullptr"), Src, Depend, "ptr", "immediate"):-
+evaluate_val(Val, $Number(0), Src, Depend, "data", Reason) <= 
+evaluate_val(Val, $Symbolic(EA, "nullptr"), Src, _, "ptr", _):-
     ptr_candidate(EA).
 
 // used from memory
-evaluate_val(Val, Val_exp, Src_def, Depend, Type, "indirect"):-
-    op_to_val(_, _, _, "out", _, Val),
-    address_expr_simplified(Val, Exp),
+evaluate_val(Val, Val_exp, Src_def, $Load(EA, Address, Addr_depend, Depend), Type, "indirect"):-
+    op_to_val(EA, _, Index, "out", _, Val),
+    (op_to_val(EA, _, Index, "base", _, Base_val);
+    op_to_val(EA, _, Index, "idx", _, Base_val)),
+    evaluate_val(Base_val, Ptr, _, Addr_depend, _, _),
+    address_expr_simplified(Val, Ptr, Exp),
     op_to_val(_, _, _, "in", _, Src),
-    address_expr_simplified(Src, Exp),
+    address_expr_simplified(Src, Ptr, Exp),
+    value_depend(Val, Src_def, $Load(EA, Address, Addr_depend, Depend)),
     evaluate_val(Src, Val_exp, Src_def, Depend, Type, _),
     !value_def_used(_, Val, _).
+
+evaluate_val(Val, $Address(Addr_val), [EA, Addr, 0], $Load(EA, Exp, Addr_depend, $Leaf(Base)), "ptr", "symbol"):-
+    op_to_val(EA, _, Index, "out", _, Val),
+    (op_to_val(EA, _, Index, "base", _, Base_val);
+    op_to_val(EA, _, Index, "idx", _, Base_val)),
+    evaluate_val(Base_val, Ptr, _, Addr_depend, _, _),
+    address_expr_simplified(Val, Ptr, Exp),
+    initialized_data_segment(Begin, End),
+    (Exp=$Address(Base), Addr=Base;
+    Exp=$Add($Address(Base), $Number(Offset)), 
+    Addr=Base + as(Offset, unsigned)),
+    Addr >= Begin,
+    Addr < End,
+    symbolic_data(Addr, _, Addr_val).
 
 evaluate_val($Empty_val(), $Number(0), [0, 0, 0], $Leaf(0), "data", "null").
 
@@ -284,19 +303,19 @@ to_simplify(Exp):-
     Exp=$Add(Src1_exp, $Add($Mult(Src2_exp, $Number(Mult)), $Number(Offset))).
 
 to_simplify(Exp):-
-    address_expr(_, Exp).
+    address_expr(_, _, Exp).
 
 to_simplify(Exp):-
-    address_expr(_, $Add(Exp, _)).
+    address_expr(_, _, $Add(Exp, _)).
 
 to_simplify(Exp):-
-    address_expr(_, $Add(_, Exp)).
+    address_expr(_, _, $Add(_, Exp)).
 
 to_simplify(Exp):-
-    address_expr(_, $Add(_, $Add(Exp, _))).
+    address_expr(_, _, $Add(_, $Add(Exp, _))).
 
 to_simplify(Exp):-
-    address_expr(_, $Add(_, $Add(_, Exp))).
+    address_expr(_, _, $Add(_, $Add(_, Exp))).
 
 arg_value(EA_call, Function, Idx, $Register(EA_def, Reg, Index, "reg", "in"), Val):-
     function_reg_arg(EA_call, Callee, $Register(EA_def, Reg, Index, "reg", "in")),

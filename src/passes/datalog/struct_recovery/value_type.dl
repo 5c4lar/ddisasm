@@ -11,47 +11,76 @@ type_size($Union(Size, Fields), Size):-
     value_type(_, _, $Union(Size, Fields)).
 .decl object_base(Address:expression, Base:number)
 object_base(Address, Offset):-
-    value_used_for_address(_, Offset, _, _, Address),
-    Offset = min Offset:value_used_for_address(_, Offset, _, _, Address).
-value_used_for_address(Val, Offset, Size, Direction, Address):-
+    value_used_for_address(_, Offset, _, _, _, Address),
+    Offset = min Offset:value_used_for_address(_, Offset, _, _, _, Address).
+
+.decl val_indirect_loaded(Val:value_desc)
+val_indirect_loaded(Val):-
+    op_to_val(_, _, _, "out", _, Val),
+    value_depend(Val, _, $Load(_, _, _, _)).
+
+value_used_for_address(Val, Offset, Size, Direction, Depend, Sym):-
     !instruction_get_operation(EA, "LEA"),
-    address_expr_simplified(Val, Expr),
+    address_expr_simplified(Val, _, Expr),
+    (value_depend(Val, _, $Load(_, Expr, _, Depend));
+    !val_indirect_loaded(Val),
+    value_depend(Val, _, Depend);
+    !value_depend(Val, _, _), Depend=$Leaf(EA)),
     op_to_val(EA, _, _, Direction, _, Val),
     instruction_memory_access_size(EA, _, Size),
-    Expr=$Add(Address, $Number(Offset)).
+    (Sym=$Address(Addr),Addr=Addr;
+    Sym=$Symbolic(Id, Symbol),Id=Id, Symbol!="nullptr"),
+    Expr=$Add(Sym, $Number(Offset)).
 
-value_used_for_address(Val, Offset1, Size, Direction, Address) <= 
-value_used_for_address(Val, Offset2, Size, Direction, Address) :-
+value_used_for_address(Val, 0, Size, Direction, Depend, Sym):-
+    !instruction_get_operation(EA, "LEA"),
+    address_expr_simplified(Val, _, Sym),
+    (Sym=$Address(Addr),Addr=Addr;
+    Sym=$Symbolic(Id, Symbol),Id=Id, Symbol!="nullptr"),
+    (value_depend(Val, _, $Load(_, Sym, _, Depend));
+    !val_indirect_loaded(Val),
+    value_depend(Val, _,  Depend);
+    !value_depend(Val, _, _), Depend=$Leaf(EA)),
+    op_to_val(EA, _, _, Direction, _, Val),
+    instruction_memory_access_size(EA, _, Size).
+
+// deal with bogus value because of array
+value_used_for_address(Val, Offset1, Size, Direction, Depend, Address) <= 
+value_used_for_address(Val, Offset2, Size, Direction, _, Address) :-
     Offset2 < Offset1.
 
-value_used_for_address(Val, 0, Size, Direction, $Address(Addr)):-
-    !instruction_get_operation(EA, "LEA"),
-    address_expr_simplified(Val, $Address(Addr)),
-    op_to_val(EA, _, _, Direction, _, Val),
-    instruction_memory_access_size(EA, _, Size).
+value_type(Address, Offset, $Basic(Size, "data")):-
+    value_used_for_address(Val, Offset, Size, _, Depend, Address),
+    evaluate_val(Val, _, _, $Load(_, _, _, Depend), "data", _).
 
-value_used_for_address(Val, 0, Size, Direction, $Symbolic(Id, Sym)):-
-    !instruction_get_operation(EA, "LEA"),
-    address_expr_simplified(Val, $Symbolic(Id, Sym)),
-    op_to_val(EA, _, _, Direction, _, Val),
-    instruction_memory_access_size(EA, _, Size).
+// value_type(Address, Offset, $Basic(Size, "data")):-
+//     value_used_for_address(Val, Offset, Size, _, Depend, Address),
+//     !val_indirect_loaded(Val),
+//     evaluate_val(Val, _, _, Depend, "data", _).
 
 value_type(Address, Offset, $Basic(Size, "data")):-
-    value_used_for_address(Val, Offset, Size, _, Address),
-    evaluate_val(Val, _, _, _, "data", _).
-
-value_type(Address, Offset, $Basic(Size, "data")):-
-    value_used_for_address(_, Offset, Size, _, Address),
+    value_used_for_address(_, Offset, Size, _, _, Address),
     !pointer_size(Size).
 
+value_type($Address(Addr), Offset, $Pointer(8, $Address(Pointee))):-
+    value_used_for_address(Val, Offset, Size, _, _, $Address(Addr)),
+    pointer_size(Size),
+    symbolic_data(as(as(Addr, number)+Offset, address), Size, Pointee),
+    !evaluate_val(Val, _, _, _, _, _).
+
 value_type(Address, Offset, $Basic(Size, "unknown")):-
-    value_used_for_address(Val, Offset, Size, _, Address),
+    value_used_for_address(Val, Offset, Size, _, _, Address),
     pointer_size(Size),
     !evaluate_val(Val, _, _, _, _, _).
 
 value_type(Address, Offset, $Pointer(8, Pointee)):-
-    value_used_for_address(Val, Offset, 8, _, Address),
-    evaluate_val(Val, Pointee, _, _, "ptr", _).
+    value_used_for_address(Val, Offset, 8, _, Depend, Address),
+    evaluate_val(Val, Pointee, _, $Load(_, _, _, Depend), "ptr", _).
+
+value_type(Address, Offset, $Pointer(8, Pointee)):-
+    value_used_for_address(Val, Offset, 8, _, Depend, Address),
+    !val_indirect_loaded(Val),
+    evaluate_val(Val, Pointee, _, Depend, "ptr", _).
 
 value_type(Address, Base, $Struct(Size, [nil, 0, Prev])):-
     value_type(Address, Base, Prev),
@@ -66,7 +95,7 @@ value_type(Address, Res_Offset, $Struct(Size_total,  [Fields, as(Offset  - Res_O
     value_type(Address, Res_Offset, $Struct(Size, Fields)),
     value_type(Address, Offset, Type),
     type_size(Type, Last_size),
-    Offset = min Offset1:{value_used_for_address(_, Offset1, _, _, Address), as(Offset1 - Res_Offset, unsigned) >= Size},
+    Offset = min Offset1:{value_used_for_address(_, Offset1, _, _, _, Address), as(Offset1 - Res_Offset, unsigned) >= Size},
     Size_total=as(Offset - Res_Offset, unsigned) + Last_size.
 
 value_type(Address, Base, $Struct(Size_total, Fields)) <= value_type(Address, Base, $Struct(Size_larger, [Fields, _, _])):-
@@ -74,3 +103,9 @@ value_type(Address, Base, $Struct(Size_total, Fields)) <= value_type(Address, Ba
 
 value_type(Address, Offset, Type) <= value_type(Address, Base, $Struct(_, [_, Offset_type, Type])):-
     Offset-Base=as(Offset_type, number).
+
+value_type(Address, Offset, $Pointer(8, $Symbolic(x, "nullptr"))) <= value_type(Address, Offset, $Pointer(8, Object)):-
+    Object != $Symbolic(x, "nullptr").
+
+value_type(Address, Offset, $Basic(Size, "unknown")) <= value_type(Address, Offset, Type):-
+    Type != $Basic(Size, "unknown").

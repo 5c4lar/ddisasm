@@ -23,6 +23,10 @@ tree_leaf($Node(x, h, l, r), EA):-
     (tree_leaf(l, EA);
     tree_leaf(r, EA)).
 
+tree_leaf($Load(x, Address, Addr_depend,Depend), EA):-
+    value_depend(_, _, $Load(x, Address, Addr_depend, Depend)),
+    tree_leaf(Depend, EA).
+
 value_depend($Register(EA_call, Reg, 0, "reg", "in"), [EA_call, 0, 0], $Leaf(EA_call)):-
     direct_call(EA_call, _),
     return_val_reg(Reg).
@@ -53,13 +57,30 @@ value_depend($Register(EA, Reg, Index, "reg", "in"), [EA, 0, 0], $Leaf(EA)):-
 value_depend($Immediate(EA, Val, "data"), [EA, 0, 0], $Leaf(EA)):-
     op_to_val(EA, _, _, "out", _, $Immediate(EA, Val, "data")).
 
-value_depend(Val, From, Depend):-
-    op_to_val(_, _, _, "out", _, Val),
-    address_expr_simplified(Val, Exp),
+value_depend(Val, From, $Load(EA, Exp, Addr_depend, Depend)):-
+    op_to_val(EA, _, Index, "out", _, Val),
+    (op_to_val(EA, _, Index, "base", _, Base_val);
+    op_to_val(EA, _, Index, "idx", _, Base_val)),
+    evaluate_val(Base_val, Ptr, _, Addr_depend, _, _),
+    address_expr_simplified(Val, Ptr, Exp),
     op_to_val(_, _, _, "in", _, Src),
-    address_expr_simplified(Src, Exp),
+    address_expr_simplified(Src, Ptr, Exp),
     value_depend(Src, From, Depend),
     !value_def_used(_, Val, _).
+
+value_depend(Val,[EA, Addr, 0], $Load(EA, Exp, Addr_depend, $Leaf(Base))):-
+    op_to_val(EA, _, Index, "out", _, Val),
+    (op_to_val(EA, _, Index, "base", _, Base_val);
+    op_to_val(EA, _, Index, "idx", _, Base_val)),
+    evaluate_val(Base_val, Ptr, _, Addr_depend, _, _),
+    address_expr_simplified(Val, Ptr, Exp),
+    initialized_data_segment(Begin, End),
+    (Exp=$Address(Base), Addr=Base;
+    Exp=$Add($Address(Base), $Number(Offset)), 
+    Addr=Base + as(Offset, unsigned)),
+    Addr >= Begin,
+    Addr < End,
+    symbolic_data(Addr, _, _).
 
 value_depend($Empty_val(), [0, 0, 0], $Leaf(0)).
 
@@ -75,9 +96,11 @@ value_depend(Dst, [EA, EA1, EA2], $Node(EA, h, Depend1, Depend2)):-
     op_to_val(EA, _, _, _, _, Dst),
     value_arithmetic_edge(Dst, Src1, Src2, _, _),
     (value_depend(Src1, [EA1, _, _], $Node(EA1, h1, l1, r1)), Depend1=$Node(EA1, h1, l1, r1);
-    value_depend(Src1, [EA1, _, _], $Leaf(x)),h1=0,Depend1=$Leaf(x)),
+    value_depend(Src1, [EA1, _, _], $Leaf(x)),h1=0,Depend1=$Leaf(x);
+    value_depend(Src1, [EA1, _, _], $Load(a, b, c, $Leaf(EA1))),h1=0,Depend1=$Load(a, b, c, $Leaf(EA1))),
     (value_depend(Src2, [EA2, _, _], $Node(EA2, h2, l2, r2)),Depend2=$Node(EA2, h2, l2, r2);
-    value_depend(Src2, [EA2, _, _], $Leaf(y)),h2=0,Depend2=$Leaf(y)),
+    value_depend(Src2, [EA2, _, _], $Leaf(y)),h2=0,Depend2=$Leaf(y);
+    value_depend(Src2, [EA2, _, _], $Load(d, e, f, $Leaf(EA2))),h2=0,Depend2=$Load(d, e, f, $Leaf(EA2))),
     h = max(h1, h2) + 1.
 
 .decl not_ptr(EA:address)

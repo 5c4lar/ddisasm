@@ -289,3 +289,6 @@ is_xor_reset(EA):-
 
 .decl best_symexpr_symbol(EA:address,SymbolName:symbol,Pos:symbol_position)
 .input best_symexpr_symbol
+
+.decl symbolic_data(EA:address,Size:unsigned,Value:address)
+.input symbolic_data

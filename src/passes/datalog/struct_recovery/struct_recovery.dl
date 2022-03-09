@@ -33,15 +33,13 @@
 .type expression = Number {x: number}
                  | Address {x: address}
                  | Symbolic {x: address, y: symbol}
-                 | Symbolized{x: src_desc}
-                //  | Calc {Base: value_desc, Idx: value_desc, Mult: number, Offset: number}
-                //  | Mem {Src1: value_desc, Src2: value_desc, Mult: number, Offset: number}
                  | Add {e_1: expression, e_2: expression}
                  | Sub {e_1: expression, e_2: expression}
                  | Mult {e_1: expression, e_2: expression}
 
 .type depend     = Leaf {EA: address}
                  | Node {EA: address, height:unsigned, left: depend, right: depend}
+                 | Load {EA: address, Address:expression, Addr_depend:depend, Depend: depend}
 
 .type src_desc = [EA:address, Src1:address, Src2:address]
 
@@ -65,9 +63,9 @@
 .output value_edge
 .decl value_arithmetic_edge(Dst: value_desc, Op1: value_desc, Op2:value_desc, Mult:number, Offset:number)
 .output value_arithmetic_edge
-.decl address_expr(Val:value_desc, Exp:expression)
+.decl address_expr(Val:value_desc, Ptr:expression, Exp:expression)
 .output address_expr
-.decl address_expr_simplified(Val:value_desc, Exp:expression)
+.decl address_expr_simplified(Val:value_desc, Ptr:expression, Exp:expression)
 .output address_expr_simplified
 .decl op_to_val(EA:address, Op:operand_code, Idx:unsigned, Direction:symbol, Type:symbol, Val:value_desc)
 .output op_to_val
@@ -81,7 +79,7 @@
 .output to_simplify
 .decl simplify_exp(Exp:expression, Res:expression)
 .output simplify_exp
-.decl value_used_for_address(Mem:value_desc, Offset:number, Size:unsigned, Direction:symbol, Address: expression)
+.decl value_used_for_address(Mem:value_desc, Offset:number, Size:unsigned, Direction:symbol, Depend:depend, Address: expression)
 .output value_used_for_address
 .decl value_type(Address:expression, Offset:number, Type:type_desc)
 .output value_type

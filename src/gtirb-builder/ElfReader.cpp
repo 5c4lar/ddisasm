@@ -347,6 +347,17 @@ void ElfReader::addAuxData()
     {
         std::string SymbolName;
         std::string SectionName;
+        if(Relocation.has_section())
+        {
+            LIEF::ELF::Section &Section = Relocation.section();
+            if(!Section.has(LIEF::ELF::ELF_SECTION_FLAGS::SHF_ALLOC))
+            {
+                // Ignore relocations that are applied to un-loaded sections.
+                continue;
+            }
+            SectionName = Section.name();
+        }
+
         if(Relocation.has_symbol())
         {
             SymbolName = Relocation.symbol().name();
@@ -361,12 +372,6 @@ void ElfReader::addAuxData()
                     else
                         SymbolName.append("@" + SymbolVersion.symbol_version_auxiliary().name());
                 }
-            }
-
-            if(Relocation.has_section())
-            {
-                LIEF::ELF::Section &Section = Relocation.section();
-                SectionName = Section.name();
             }
         }
 

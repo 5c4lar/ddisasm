@@ -482,3 +482,99 @@ if(BUILD_FUNINFER)
 
   install(TARGETS funinfer DESTINATION bin)
 endif()
+
+find_package(sleigh REQUIRED)
+if(BUILD_STRUCT_RECOVER)
+  # ===== souffle_struct_recover =====
+
+  add_executable(struct_recover 
+    StructRecover.cpp
+    loadimage_bfd.cpp
+    bfd_arch.cpp)
+  find_library(BFD bfd)
+  if(BFD)
+    message(STATUS "Found libbfd\n")
+    target_link_libraries(struct_recover PRIVATE ${BFD})
+  else()
+    message(STATUS "WARNING: unable to find libbfd, bfd dependent content will be omitted from install.\n")
+  endif()
+  target_include_directories(
+    struct_recover PRIVATE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>)
+
+  if(SOUFFLE_INCLUDE_DIR)
+    target_include_directories(struct_recover PRIVATE ${SOUFFLE_INCLUDE_DIR})
+  endif()
+
+  # target_include_directories(struct_recover PRIVATE /usr/local/include/coronium)
+  # target_include_directories()
+
+  if(${GTIRB_USE_SYSTEM_BOOST} MATCHES "OFF")
+    add_dependencies(struct_recover Boost)
+  endif()
+
+  if(DDISASM_STATIC_DRIVERS)
+    if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+      # We do not want to statically link in the STL here, as MSVC is a bit
+      # prickly about STL ABIs.
+    else()
+      target_link_libraries(struct_recover PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+  endif()
+
+  target_link_libraries(
+    struct_recover
+    PRIVATE gtirb
+            gtirb_decoder
+            scc_pass
+            ${CAPSTONE}
+            ${Boost_LIBRARIES}
+            ${EXPERIMENTAL_LIB}
+            ${LIBCPP_ABI}
+            scc_pass)
+
+  target_link_libraries(struct_recover PRIVATE
+    sleigh::sla
+    sleigh::decomp
+    sleigh::support
+  )
+
+  if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+    target_link_libraries(struct_recover PRIVATE scc_pass no_return_pass
+                                           function_inference_pass)
+    target_link_options(
+      struct_recover PRIVATE /WHOLEARCHIVE:no_return_pass$<$<CONFIG:Debug>:d>
+      /WHOLEARCHIVE:function_inference_pass$<$<CONFIG:Debug>:d>)
+  else()
+    if(APPLE)
+      target_link_libraries(
+        struct_recover PRIVATE -Wl,-all_load no_return_pass function_inference_pass
+                         -Wl,-noall_load)
+    else()
+      target_link_libraries(
+        struct_recover PRIVATE -Wl,--whole-archive no_return_pass
+                         function_inference_pass -Wl,--no-whole-archive)
+    endif()
+  endif()
+
+  target_compile_options(struct_recover PRIVATE ${OPENMP_FLAGS})
+
+  if(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+    target_link_options(struct_recover PRIVATE -NODEFAULTLIB:LIBCMTD)
+    set_common_msvc_options(struct_recover)
+  else()
+    target_compile_options(struct_recover PRIVATE -O3)
+    # target_compile_options(struct_recover PRIVATE -Wall)
+    target_compile_options(struct_recover PRIVATE -Wextra -Wpointer-arith)
+    # target_compile_options(struct_recover PRIVATE -Werror)
+  endif()
+
+  if(${CMAKE_CXX_COMPILER_ID} STREQUAL GNU)
+    if(DDISASM_STATIC_DRIVERS)
+      target_link_libraries(struct_recover PRIVATE -l:libgomp.a)
+    else()
+      target_link_libraries(struct_recover PRIVATE gomp pthread)
+    endif()
+  endif()
+
+  install(TARGETS struct_recover DESTINATION bin)
+endif()

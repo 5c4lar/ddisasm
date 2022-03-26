@@ -74,10 +74,10 @@ value_reg_edge(EA,Reg,EA,"NONE",0,Immediate):-
     arch.move_operation(Operation),
     op_immediate_and_reg(EA,Operation,Reg,_,Immediate).
 
-.decl reg_stored_in_stack(EA:address,Reg:register,Base:register,StackPos:number, StackFrameDefinedAt: address)
+.decl reg_stored_in_stack(EA:address,Reg:register,StackPos:number, StackFrameDefinedAt: address)
 .output reg_stored_in_stack
 
-reg_stored_in_stack(EA,Reg,Base,StackPos,StackFrameDefinedAt):-
+reg_stored_in_stack(EA,Reg,StackPos,StackFrameDefinedAt):-
     (
         arch.frame_pointer(Base);
         arch.stack_pointer(Base)

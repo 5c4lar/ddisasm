@@ -505,6 +505,7 @@ if(BUILD_STRUCT_RECOVER)
 
   add_executable(struct_recover 
     StructRecover.cpp
+    printLLVM.cpp
     loadimage_bfd.cpp
     bfd_arch.cpp)
   find_library(BFD bfd)

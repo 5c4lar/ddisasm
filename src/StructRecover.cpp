@@ -407,7 +407,7 @@ int main(int argc, char **argv)
             DocumentStorage store;
             arch.init(store);
             arch.print->setOutputStream(&std::cerr);
-            arch.setPrintLanguage("c-language");
+            arch.setPrintLanguage("llvm-language");
         } catch (LowlevelError& e) {
             std::cerr << "Error: " << e.explain << std::endl;
             return 1;
@@ -492,7 +492,7 @@ int main(int argc, char **argv)
             //     std::cerr << op->first.getOrder() << ": ";
             //     dump(op->second);
             // }
-            // arch.print->docFunction(func);
+            arch.print->docFunction(func);
             std::cerr << "---" << std::endl;
         }
     }

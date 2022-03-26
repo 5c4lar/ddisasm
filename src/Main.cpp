@@ -55,6 +55,7 @@
 #include "passes/FunctionInferencePass.h"
 #include "passes/NoReturnPass.h"
 #include "passes/SccPass.h"
+#include "passes/StructRecoveryPass.h"
 
 namespace fs = boost::filesystem;
 namespace po = boost::program_options;
@@ -188,7 +189,9 @@ int main(int argc, char **argv)
         "no-analysis,n",
         "Do not perform disassembly. This option only parses/loads the binary object into GTIRB.")(
         "interpreter,I", po::value<std::string>(),
-        "Execute the souffle interpreter with the specified source file.");
+        "Execute the souffle interpreter with the specified source file.")(
+        "struct", "Recovery data structure.")(
+        "load-dir", po::value<std::string>(), "location to read CSV files for additional information");
 
     po::positional_options_description pd;
     pd.add("input-file", -1);

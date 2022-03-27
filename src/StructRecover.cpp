@@ -484,25 +484,20 @@ int main(int argc, char **argv)
             auto action = arch.allacts.getCurrent();
             // action->setBreakPoint(Action::breakflags::break_start, "mergerequired");
             action->reset(*func);
-            action->printState(std::cerr);
-            std::cerr << std::endl;
             // func->printRaw(std::cerr);
             auto res = action->perform(*func);
-            action->printState(std::cerr);
-            std::cerr << std::endl;
-            func->printRaw(std::cerr);
-            // AssemblyRaw assememit;
+            // func->printRaw(std::cerr);
+            AssemblyRaw assememit;
             
-            // for (auto &fb: func->getBasicBlocks().getList()) {
-            //     auto bb = dynamic_cast<BlockBasic*>(fb);
-            //     for (auto op = bb->beginOp(); op != bb->endOp(); ++op) {
-            //         dump(*op);
-            //     }
-            // }
+            for (auto &fb: func->getBasicBlocks().getList()) {
+                auto bb = dynamic_cast<BlockBasic*>(fb);
+                for (auto op = bb->beginOp(); op != bb->endOp(); ++op) {
+                    dump(*op);
+                }
+            }
             // for (auto op = func->beginOpAll(); op != func->endOpAll(); ++op) {
-                // std::cerr << "--- ";
-                // arch.translate->printAssembly(assememit,op->first.getAddr());
-            //     std::cerr << op->first.getOrder() << ": ";
+            //     std::cerr << "--- ";
+            //     arch.translate->printAssembly(assememit,op->first.getAddr());
             //     dump(op->second);
             // }
             dynamic_cast<PrintLLVM*>(arch.print)->buildFunction(func);

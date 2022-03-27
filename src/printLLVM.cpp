@@ -2354,6 +2354,452 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
         emit->tagLine();
 }
 
+void PrintLLVM::buildOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCopy(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpLoad(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpStore(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBranch(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCbranch(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBranchind(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCall(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCallind(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCallother(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpConstructor(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpReturn(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSless(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSlessEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntLess(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntLessEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntZext(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSext(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntAdd(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSub(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntCarry(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntScarry(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSborrow(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpInt2Comp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntNegate(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntXor(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntAnd(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntOr(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntLeft(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntRight(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSright(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntMult(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntDiv(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSdiv(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntRem(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIntSrem(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBoolNegate(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBoolXor(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBoolAnd(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpBoolOr(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatNotEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatLess(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatLessEqual(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatNan(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatAdd(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatDiv(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatMult(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatSub(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatNeg(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatAbs(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatSqrt(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatInt2Float(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatFloat2Float(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatTrunc(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatCeil(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatFloor(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpFloatRound(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpMultiequal(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpIndirect(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpPiece(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpSubpiece(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCast(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpPtradd(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpSegmentOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpCpoolRefOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpNewOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpInsertOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpExtractOp(const PcodeOp *op)
+{
+}
+void PrintLLVM::buildOpPopcountOp(const PcodeOp *op)
+{
+}
+
+void PrintLLVM::buildInst(const PcodeOp *inst)
+{
+    switch(inst->getOpcode()->getOpcode())
+    {
+        case CPUI_COPY:
+            buildOpCopy(inst);
+            break;
+        case CPUI_LOAD:
+            buildOpLoad(inst);
+            break;
+        case CPUI_STORE:
+            buildOpStore(inst);
+            break;
+
+        case CPUI_BRANCH:
+            buildOpBranch(inst);
+            break;
+        case CPUI_CBRANCH:
+            buildOpCbranch(inst);
+            break;
+        case CPUI_BRANCHIND:
+            buildOpBranchind(inst);
+            break;
+
+        case CPUI_CALL:
+            buildOpCall(inst);
+            break;
+        case CPUI_CALLIND:
+            buildOpCallind(inst);
+            break;
+        case CPUI_RETURN:
+            buildOpReturn(inst);
+            break;
+
+        case CPUI_INT_EQUAL:
+            buildOpIntEqual(inst);
+            break;
+        case CPUI_INT_NOTEQUAL:
+            buildOpIntNotEqual(inst);
+            break;
+        case CPUI_INT_SLESS:
+            buildOpIntSless(inst);
+            break;
+        case CPUI_INT_SLESSEQUAL:
+            buildOpIntSlessEqual(inst);
+            break;
+        case CPUI_INT_LESS:
+            buildOpIntLess(inst);
+            break;
+        case CPUI_INT_LESSEQUAL:
+            buildOpIntLessEqual(inst);
+            break;
+
+        case CPUI_INT_ZEXT:
+            buildOpIntZext(inst);
+            break;
+        case CPUI_INT_SEXT:
+            buildOpIntSext(inst);
+            break;
+        case CPUI_INT_ADD:
+            buildOpIntAdd(inst);
+            break;
+        case CPUI_INT_SUB:
+            buildOpIntSub(inst);
+            break;
+        case CPUI_INT_CARRY:
+            buildOpIntCarry(inst);
+            break;
+        case CPUI_INT_SCARRY:
+            buildOpIntScarry(inst);
+            break;
+        case CPUI_INT_SBORROW:
+            buildOpIntSborrow(inst);
+            break;
+        case CPUI_INT_2COMP:
+            buildOpInt2Comp(inst);
+            break;
+        case CPUI_INT_NEGATE:
+            buildOpIntNegate(inst);
+            break;
+        case CPUI_INT_XOR:
+            buildOpIntXor(inst);
+            break;
+        case CPUI_INT_AND:
+            buildOpIntAnd(inst);
+            break;
+        case CPUI_INT_OR:
+            buildOpIntOr(inst);
+            break;
+        case CPUI_INT_LEFT:
+            buildOpIntLeft(inst);
+            break;
+        case CPUI_INT_RIGHT:
+            buildOpIntRight(inst);
+            break;
+        case CPUI_INT_SRIGHT:
+            buildOpIntSright(inst);
+            break;
+        case CPUI_INT_MULT:
+            buildOpIntMult(inst);
+            break;
+        case CPUI_INT_SDIV:
+            buildOpIntSdiv(inst);
+            break;
+        case CPUI_INT_REM:
+            buildOpIntRem(inst);
+            break;
+        case CPUI_INT_SREM:
+            buildOpIntSrem(inst);
+            break;
+
+        case CPUI_BOOL_NEGATE:
+            buildOpBoolNegate(inst);
+            break;
+        case CPUI_BOOL_XOR:
+            buildOpBoolXor(inst);
+            break;
+        case CPUI_BOOL_AND:
+            buildOpBoolAnd(inst);
+            break;
+        case CPUI_BOOL_OR:
+            buildOpBoolOr(inst);
+            break;
+
+        case CPUI_FLOAT_EQUAL:
+            buildOpFloatEqual(inst);
+            break;
+        case CPUI_FLOAT_NOTEQUAL:
+            buildOpFloatNotEqual(inst);
+            break;
+        case CPUI_FLOAT_LESS:
+            buildOpFloatLess(inst);
+            break;
+        case CPUI_FLOAT_LESSEQUAL:
+            buildOpFloatLessEqual(inst);
+            break;
+        case CPUI_FLOAT_NAN:
+            buildOpFloatNan(inst);
+            break;
+
+        case CPUI_FLOAT_ADD:
+            buildOpFloatAdd(inst);
+            break;
+        case CPUI_FLOAT_DIV:
+            buildOpFloatDiv(inst);
+            break;
+        case CPUI_FLOAT_MULT:
+            buildOpFloatMult(inst);
+            break;
+        case CPUI_FLOAT_SUB:
+            buildOpFloatSub(inst);
+            break;
+        case CPUI_FLOAT_NEG:
+            buildOpFloatNeg(inst);
+            break;
+        case CPUI_FLOAT_ABS:
+            buildOpFloatAbs(inst);
+            break;
+        case CPUI_FLOAT_SQRT:
+            buildOpFloatSqrt(inst);
+            break;
+
+        case CPUI_FLOAT_INT2FLOAT:
+            buildOpFloatInt2Float(inst);
+            break;
+        case CPUI_FLOAT_FLOAT2FLOAT:
+            buildOpFloatFloat2Float(inst);
+            break;
+        case CPUI_FLOAT_TRUNC:
+            buildOpFloatTrunc(inst);
+            break;
+        case CPUI_FLOAT_CEIL:
+            buildOpFloatCeil(inst);
+            break;
+        case CPUI_FLOAT_FLOOR:
+            buildOpFloatFloor(inst);
+            break;
+        case CPUI_FLOAT_ROUND:
+            buildOpFloatRound(inst);
+            break;
+
+        case CPUI_MULTIEQUAL:
+            buildOpMultiequal(inst);
+            break;
+        case CPUI_INDIRECT:
+            buildOpIndirect(inst);
+            break;
+        case CPUI_PIECE:
+            buildOpPiece(inst);
+            break;
+        case CPUI_SUBPIECE:
+            buildOpSubpiece(inst);
+            break;
+
+        case CPUI_CAST:
+            buildOpCast(inst);
+            break;
+        case CPUI_PTRADD:
+            buildOpPtradd(inst);
+            break;
+        case CPUI_PTRSUB:
+            buildOpPtrsub(inst);
+            break;
+        case CPUI_SEGMENTOP:
+            buildOpSegmentOp(inst);
+            break;
+        case CPUI_CPOOLREF:
+            buildOpCpoolRefOp(inst);
+            break;
+        case CPUI_NEW:
+            buildOpNewOp(inst);
+            break;
+        case CPUI_INSERT:
+            buildOpInsertOp(inst);
+            break;
+        case CPUI_EXTRACT:
+            buildOpExtractOp(inst);
+            break;
+        case CPUI_POPCOUNT:
+            buildOpPopcountOp(inst);
+            break;
+        default:
+            break;
+    }
+}
+
 /// This emits an entire statement rooted at a given operation. All associated expressions
 /// on the right-hand and left-hand sides are recursively emitted. Depending on the current
 /// printing properties, the statement is usually terminated with ';' character.
@@ -2901,79 +3347,49 @@ void PrintLLVM::docFunction(const Funcdata *fd)
 void PrintLLVM::buildBlockBasic(const BlockBasic *bb)
 {
     const PcodeOp *inst;
+    list<PcodeOp *>::const_iterator iter;
+    for(iter = bb->beginOp(); iter != bb->endOp(); ++iter)
+    {
+        inst = *iter;
+        buildInst(inst);
+    }
     inst = bb->lastOp();
     if(bb->sizeOut() == 2)
     {
-        llvm::BasicBlock * btrue;
-        llvm::BasicBlock * bfalse;
+        llvm::BasicBlock *btrue;
+        llvm::BasicBlock *bfalse;
         if(inst->isFallthruTrue())
         {
-            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(0)))->second;
-            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(1)))->second;
+            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
         }
         else
         {
-            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(1)))->second;
-            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(0)))->second;
+            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
         }
         auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
         IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
     }
     else if(bb->sizeOut() == 1)
     {
-        auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(0)))->second;
+        auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
         IRBuilder->CreateBr(next);
-    } else 
+    }
+    else
     {
         auto rtype = translateType(bb->getFuncdata()->getFuncProto().getOutputType());
-        llvm::Value * dummy_ret;
-        if (rtype->isVoidTy()) {
-          dummy_ret = nullptr;
-        } else {
-          dummy_ret = llvm::Constant::getNullValue(rtype);
+        llvm::Value *dummy_ret;
+        if(rtype->isVoidTy())
+        {
+            dummy_ret = nullptr;
+        }
+        else
+        {
+            dummy_ret = llvm::Constant::getNullValue(rtype);
         }
         IRBuilder->CreateRet(dummy_ret);
     }
-    // if (isSet(only_branch)) {
-    //   inst = bb->lastOp();
-    //   if (inst->isBranch())
-    //     emitExpression(inst);	// Only print branch instruction
-    // }
-    // else {
-    //   separator = false;
-    //   list<PcodeOp *>::const_iterator iter;
-    //   for(iter=bb->beginOp();iter!=bb->endOp();++iter) {
-    //     inst = *iter;
-    //     if (inst->notPrinted()) continue;
-    //     if (inst->isBranch()) {
-    // if (isSet(no_branch)) continue;
-    // // A straight branch is always printed by
-    // // the block classes
-    // if (inst->code() == CPUI_BRANCH) continue;
-    //     }
-    //     const Varnode *vn = inst->getOut();
-    //     if ((vn!=(const Varnode *)0)&&(vn->isImplied()))
-    // continue;
-    //     emitStatement(inst);
-    //   }
-    // 			// If we are printing flat structure and there
-    // 			// is no longer a normal fallthru, print a goto
-    //   if (isSet(flat)&&isSet(nofallthru)) {
-    //     inst = bb->lastOp();
-    //     emit->tagLine();
-    //     int4 id = emit->beginStatement(inst);
-    //     emit->print("goto",EmitXml::keyword_color);
-    //     emit->spaces(1);
-    //     if (bb->sizeOut()==2) {
-    // if (inst->isFallthruTrue())
-    //   emitLabel(bb->getOut(1));
-    // else
-    //   emitLabel(bb->getOut(0));
-    //     }
-    //     else
-    // emitLabel(bb->getOut(0));
-    //   }
-    // }
 }
 
 void PrintLLVM::emitBlockBasic(const BlockBasic *bb)

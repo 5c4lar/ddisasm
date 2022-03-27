@@ -134,7 +134,8 @@ protected:
   std::unique_ptr<llvm::LLVMContext> LLVM_Context;
   std::unique_ptr<llvm::IRBuilder<>> IRBuilder;
   std::unique_ptr<llvm::Module> LLVM_Module;
-  std::map<std::string, llvm::Value*> LLVM_ValueMap;
+  std::map<const Varnode*, llvm::Value*> LLVM_ValueMap;
+  std::map<const BlockBasic *, llvm::BasicBlock*> LLVM_BlockMap;
 
   // Routines that are specific to C/C++
   void buildTypeStack(const Datatype *ct,vector<const Datatype *> &typestack);	///< Prepare to push components of a data-type declaration
@@ -205,9 +206,25 @@ protected:
 
   // void buildExpression(const PcodeOp *op);
   llvm::Type *translateType(Datatype* dtype);
+  void buildExpression(const PcodeOp *op);
+  void buildVarDecl(const Symbol *sym);
+  bool buildScopeVarDecls(const Scope *symScope,int4 cat);
   llvm::Function *buildFunctionDeclaration(const Funcdata* fd);
+  llvm::BasicBlock *buildLocalVarDecls(const Funcdata* fd, llvm::Function *func);
   llvm::Type *buildPrototypeOutput(const FuncProto* proto, const Funcdata *fd);
-  llvm::ArrayRef<llvm::Type *> buildPrototypeInputs(const FuncProto* proto);
+  std::vector<llvm::Type*>  buildPrototypeInputs(const FuncProto* proto);
+
+  void buildBlockBasic(const BlockBasic *bb);
+  void buildBlockGraph(const BlockGraph *bl, llvm::Function* func);
+  void buildBlockCopy(const BlockCopy *bl);
+  void buildBlockGoto(const BlockGoto *bl);
+  void buildBlockLs(const BlockList *bl);
+  void buildBlockCondition(const BlockCondition *bl);
+  void buildBlockIf(const BlockIf *bl);
+  void buildBlockWhileDo(const BlockWhileDo *bl);
+  void buildBlockDoWhile(const BlockDoWhile *bl);
+  void buildBlockInfLoop(const BlockInfLoop *bl);
+  void buildBlockSwitch(const BlockSwitch *bl);
 
   virtual void emitExpression(const PcodeOp *op);
   virtual void emitVarDecl(const Symbol *sym);

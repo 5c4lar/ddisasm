@@ -416,6 +416,16 @@ int main(int argc, char **argv)
         auto *FunctionEntries = Module->getAuxData<gtirb::schema::FunctionEntries>();
         auto *FunctionBlocks = Module->getAuxData<gtirb::schema::FunctionBlocks>();
         auto *FunctionNames = Module->getAuxData<gtirb::schema::FunctionNames>();
+        auto *SymbolForwardings = Module->getAuxData<gtirb::schema::SymbolForwarding>();
+        std::map<uint64_t, std::string> SymbolForwardingsMap;
+        for (const auto &[SymUUID0, SymUUID1]: *SymbolForwardings) {
+            auto Sym0 = gtirb::Node::getByUUID(Context, SymUUID0);
+            auto Sym1 = gtirb::Node::getByUUID(Context, SymUUID1);
+            auto SymName0 = dyn_cast_or_null<gtirb::Symbol>(Sym0);
+            auto SymName1 = dyn_cast_or_null<gtirb::Symbol>(Sym1);
+            std::cerr << SymName0->getAddress().value() << "==>" << SymName0->getName() << " -> " << SymName1->getName() << std::endl;
+            SymbolForwardingsMap.insert(std::pair<uint64_t, std::string>(static_cast<uint64_t>(SymName0->getAddress().value()), SymName1->getName()));
+        }
         vector<uint64_t> FunctionEntryAddresses;
         for(const auto &[FunctionUUID, Entries] : *FunctionEntries)
         {
@@ -437,7 +447,9 @@ int main(int argc, char **argv)
                 auto EntryBlock = dyn_cast_or_null<gtirb::CodeBlock>(EntryBlockNode);
                 uint64_t Addr = static_cast<uint64_t>(*(EntryBlock->getAddress()));
                 std::cerr << "Entry at " << Addr << std::endl;
-                arch.symboltab->getGlobalScope()->addFunction(Address(arch.getDefaultCodeSpace(), Addr), FunctionName->getName());
+                auto iter = SymbolForwardingsMap.find(Addr);
+                auto Name = iter == SymbolForwardingsMap.end() ? FunctionName->getName() : iter->second;
+                arch.symboltab->getGlobalScope()->addFunction(Address(arch.getDefaultCodeSpace(), Addr), Name);
                 FunctionEntryAddresses.push_back(Addr);
             }
             auto It = FunctionBlocks->find(FunctionUUID);
@@ -453,7 +465,7 @@ int main(int argc, char **argv)
                 uint64_t Addr = static_cast<uint64_t>(*(Block->getAddress()));
                 uint64_t Size = Block->getSize();
                 try {
-                    dumpPcode(arch.translate, Addr, Size);
+                    // dumpPcode(arch.translate, Addr, Size);
                     // dumpAssembly(arch.translate, Addr, Size);
                 }
                 catch (LowlevelError e) {
@@ -482,7 +494,7 @@ int main(int argc, char **argv)
             // AssemblyRaw assememit;
             
             // for (auto &fb: func->getBasicBlocks().getList()) {
-            //     auto bb = reinterpret_cast<BlockBasic*>(fb);
+            //     auto bb = dynamic_cast<BlockBasic*>(fb);
             //     for (auto op = bb->beginOp(); op != bb->endOp(); ++op) {
             //         dump(*op);
             //     }
@@ -493,11 +505,11 @@ int main(int argc, char **argv)
             //     std::cerr << op->first.getOrder() << ": ";
             //     dump(op->second);
             // }
-            reinterpret_cast<PrintLLVM*>(arch.print)->buildFunction(func);
+            dynamic_cast<PrintLLVM*>(arch.print)->buildFunction(func);
             arch.print->docFunction(func);
             std::cerr << "---" << std::endl;
         }
-        reinterpret_cast<PrintLLVM*>(arch.print)->dumpLLVM();
+        dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM();
     }
 
     // Output GTIRB

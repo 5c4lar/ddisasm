@@ -16,10 +16,19 @@
 /// \file printc.hh
 /// \brief Classes to support the llvm-language back-end of the decompiler
 
-#ifndef __PRINTC__
-#define __PRINTC__
+#ifndef __PRINTLLVM__
+#define __PRINTLLVM__
 
 #include <sleigh/libsleigh.hh>
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Verifier.h"
 
 class FuncProto;
 class JumpTable;
@@ -41,13 +50,13 @@ public:
 ///
 /// A helper class for unraveling a nested reference to a field. It links the
 /// data-type, field name, field object, and token together
-struct PartialSymbolEntry {
-  const OpToken *token;		///< Operator used to drill-down to the field
-  const TypeField *field;	///< The component object describing the field
-  const Datatype *parent;	///< The parent data-type owning the field
-  string fieldname;		///< The name of the field
-  EmitXml::syntax_highlight hilite;	///< Highlight information for the field token
-};
+// struct PartialSymbolEntry {
+//   const OpToken *token;		///< Operator used to drill-down to the field
+//   const TypeField *field;	///< The component object describing the field
+//   const Datatype *parent;	///< The parent data-type owning the field
+//   string fieldname;		///< The name of the field
+//   EmitXml::syntax_highlight hilite;	///< Highlight information for the field token
+// };
 
 /// \brief The llvm-language token emitter
 ///
@@ -122,6 +131,11 @@ protected:
   string nullToken;		///< Token to use for 'null'
   CommentSorter commsorter;	///< Container/organizer for comments in the current function
 
+  std::unique_ptr<llvm::LLVMContext> LLVM_Context;
+  std::unique_ptr<llvm::IRBuilder<>> IRBuilder;
+  std::unique_ptr<llvm::Module> LLVM_Module;
+  std::map<std::string, llvm::Value*> LLVM_ValueMap;
+
   // Routines that are specific to C/C++
   void buildTypeStack(const Datatype *ct,vector<const Datatype *> &typestack);	///< Prepare to push components of a data-type declaration
   void pushPrototypeInputs(const FuncProto *proto);				///< Push input parameters
@@ -189,6 +203,12 @@ protected:
   virtual string genericFunctionName(const Address &addr);
   virtual string genericTypeName(const Datatype *ct);
 
+  // void buildExpression(const PcodeOp *op);
+  llvm::Type *translateType(Datatype* dtype);
+  llvm::Function *buildFunctionDeclaration(const Funcdata* fd);
+  llvm::Type *buildPrototypeOutput(const FuncProto* proto, const Funcdata *fd);
+  llvm::ArrayRef<llvm::Type *> buildPrototypeInputs(const FuncProto* proto);
+
   virtual void emitExpression(const PcodeOp *op);
   virtual void emitVarDecl(const Symbol *sym);
   virtual void emitVarDeclStatement(const Symbol *sym);
@@ -207,6 +227,9 @@ public:
   void setCPlusPlusStyleComments(void) { setCommentDelimeter("// ","",true); }	///< Set c++-style "//" comment delimiters
   void setDisplayUnplaced(bool val) { option_unplaced = val; }	///< Toggle whether \e unplaced comments are displayed in the header
   void setHideImpliedExts(bool val) { option_hide_exts = val; }	///< Toggle whether implied extensions are hidden
+
+  void buildFunction(const Funcdata *fd);
+  void dumpLLVM() { LLVM_Module->print(llvm::errs(), nullptr); }
   virtual ~PrintLLVM(void) {}
   virtual void resetDefaults(void);
   virtual void adjustTypeOperators(void);
@@ -306,13 +329,13 @@ public:
 ///
 /// These are the print commands sent to the emitter prior to printing and \e else block.
 /// The open brace can be canceled if the block decides it wants to use "else if" syntax.
-class PendingBrace : public PendPrint {
-  int4 indentId;		///< Id associated with the new indent level
-public:
-  PendingBrace(void) { indentId = -1; }			///< Constructor
-  int4 getIndentId(void) const { return indentId; }	///< If commands have been issued, returns the new indent level id.
-  virtual void callback(EmitXml *emit);
-};
+// class PendingBrace : public PendPrint {
+//   int4 indentId;		///< Id associated with the new indent level
+// public:
+//   PendingBrace(void) { indentId = -1; }			///< Constructor
+//   int4 getIndentId(void) const { return indentId; }	///< If commands have been issued, returns the new indent level id.
+//   virtual void callback(EmitXml *emit);
+// };
 
 /// \brief Push a token indicating a PTRSUB (a -> operator) is acting at an offset from the original pointer
 ///

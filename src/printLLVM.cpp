@@ -109,6 +109,9 @@ PrintLLVM::PrintLLVM(Architecture *g,const string &nm) : PrintLanguage(g,nm)
 
   castStrategy = new CastStrategyC();
   resetDefaultsPrintC();
+  LLVM_Context = std::make_unique<llvm::LLVMContext>();
+  IRBuilder = std::make_unique<llvm::IRBuilder<>>(*LLVM_Context);
+  LLVM_Module = std::make_unique<llvm::Module>("lift module", *LLVM_Context);
 }
 
 /// Push nested components of a data-type declaration onto a stack, so we can access it bottom up
@@ -1959,6 +1962,55 @@ void PrintLLVM::emitEnumDefinition(const TypeEnum *ct)
   emit->print(";");
 }
 
+llvm::Type *PrintLLVM::translateType(Datatype* dtype)
+{
+  switch (dtype->getMetatype()) {
+  {
+    case type_metatype::TYPE_VOID:
+      return llvm::Type::getVoidTy(*LLVM_Context);
+      break;
+    case type_metatype::TYPE_UNKNOWN:
+    case type_metatype::TYPE_INT:
+    case type_metatype::TYPE_UINT:
+      return llvm::Type::getIntNTy(*LLVM_Context,dtype->getSize());
+      break;
+    case type_metatype::TYPE_BOOL:
+      return llvm::Type::getInt1Ty(*LLVM_Context);
+      break;
+    case type_metatype::TYPE_FLOAT:
+      if (dtype->getSize() == 4)
+        return llvm::Type::getFloatTy(*LLVM_Context);
+      else if (dtype->getSize() == 8)
+        return llvm::Type::getDoubleTy(*LLVM_Context);
+      else
+        throw LowlevelError("Unsupported floating-point size");
+    default:
+      return llvm::Type::getIntNTy(*LLVM_Context,dtype->getSize());
+      break;
+    }
+  }
+}
+
+llvm::Type *PrintLLVM::buildPrototypeOutput(const FuncProto* proto, const Funcdata *fd) 
+{
+  PcodeOp *op;
+  Varnode *vn;
+  if (fd != (const Funcdata *)0) {
+    op = fd->getFirstReturnOp();
+    if (op != (PcodeOp *)0 && op->numInput() < 2)
+      op = (PcodeOp *)0;
+  }
+  else
+    op = (PcodeOp *)0;
+
+  Datatype *outtype = proto->getOutputType();
+  if ((outtype->getMetatype()!=TYPE_VOID)&&(op != (PcodeOp *)0))
+    vn = op->getIn(1);
+  else
+    vn = (Varnode *)0;
+  return translateType(outtype);
+}
+
 /// In C, when printing a function prototype, the function's output data-type is displayed first
 /// as a type declaration, where the function name acts as the declaration's identifier.
 /// This method emits the declaration in preparation for this.
@@ -1987,6 +2039,19 @@ void PrintLLVM::emitPrototypeOutput(const FuncProto *proto,
   pushType(outtype);
   recurse();
   emit->endReturnType(id);
+}
+
+llvm::ArrayRef<llvm::Type *> PrintLLVM::buildPrototypeInputs(const FuncProto* proto)
+{
+  std::vector<llvm::Type *> args;
+  for(int4 i=0;i<proto->numParams();++i) {
+    ProtoParameter *param = proto->getParam(i);
+    if (param->getType()->getMetatype() != type_metatype::TYPE_VOID)
+    {
+      args.push_back(translateType(param->getType()));
+    }  
+  }
+  return args;
 }
 
 /// This emits the individual type declarations of the input parameters to the function as a
@@ -2337,6 +2402,15 @@ bool PrintLLVM::emitScopeVarDecls(const Scope *symScope,int4 cat)
   return notempty;
 }
 
+llvm::Function *PrintLLVM::buildFunctionDeclaration(const Funcdata *fd)
+{
+  const FuncProto* proto = &fd->getFuncProto();
+  auto OutputType = buildPrototypeOutput(proto, fd);
+  auto InputTypes = buildPrototypeInputs(proto);
+  auto *FunctionType = llvm::FunctionType::get(OutputType, InputTypes, false);
+  return llvm::Function::Create(FunctionType, llvm::Function::ExternalLinkage, fd->getName(), LLVM_Module.get());
+}
+
 void PrintLLVM::emitFunctionDeclaration(const Funcdata *fd)
 {
   const FuncProto *proto = &fd->getFuncProto();
@@ -2401,6 +2475,27 @@ void PrintLLVM::docSingleGlobal(const Symbol *sym)
   emit->tagLine();		// Extra line
   emit->endDocument(id);
   emit->flush();
+}
+
+void PrintLLVM::buildFunction(const Funcdata *fd) 
+{
+  uint4 modsave = mods;
+  if (!fd->isProcStarted())
+    throw RecovError("Function not decompiled");
+  if ((!isSet(flat))&&(fd->hasNoStructBlocks()))
+    throw RecovError("Function not fully decompiled. No structure present.");
+  try {
+    auto func = LLVM_Module->getFunction(fd->getName());
+    if (func == nullptr) {
+      func = buildFunctionDeclaration(fd);
+      func->print(llvm::errs());
+    }
+    mods = modsave;
+  }
+  catch(LowlevelError &err) {
+    clear();		       // Don't leave printer in partial state
+    throw err;
+  }
 }
 
 void PrintLLVM::docFunction(const Funcdata *fd)

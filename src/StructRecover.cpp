@@ -32,6 +32,7 @@
 
 #include <sleigh/libsleigh.hh>
 
+#include "printLLVM.h"
 #include "loadimage_bfd.h"
 #include "AuxDataSchema.h"
 #include "Version.h"
@@ -492,9 +493,11 @@ int main(int argc, char **argv)
             //     std::cerr << op->first.getOrder() << ": ";
             //     dump(op->second);
             // }
+            reinterpret_cast<PrintLLVM*>(arch.print)->buildFunction(func);
             arch.print->docFunction(func);
             std::cerr << "---" << std::endl;
         }
+        reinterpret_cast<PrintLLVM*>(arch.print)->dumpLLVM();
     }
 
     // Output GTIRB

@@ -2172,7 +2172,7 @@ llvm::Type *PrintLLVM::translateType(Datatype *dtype)
             case type_metatype::TYPE_UNKNOWN:
             case type_metatype::TYPE_INT:
             case type_metatype::TYPE_UINT:
-                return llvm::Type::getIntNTy(*LLVM_Context, dtype->getSize());
+                return llvm::Type::getIntNTy(*LLVM_Context, dtype->getSize() * 8);
                 break;
             case type_metatype::TYPE_BOOL:
                 return llvm::Type::getInt1Ty(*LLVM_Context);
@@ -2199,7 +2199,7 @@ llvm::Type *PrintLLVM::translateType(Datatype *dtype)
                         dynamic_cast<const TypeArray *>(dtype)->numElements());
                 break;
             default:
-                return llvm::Type::getIntNTy(*LLVM_Context, dtype->getSize());
+                return llvm::Type::getIntNTy(*LLVM_Context, dtype->getSize() * 8);
                 break;
         }
     }
@@ -2354,11 +2354,40 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
         emit->tagLine();
 }
 
+llvm::Value* PrintLLVM::getVarnodeValue(const Varnode *vn)
+{
+    // std::cerr<< "Processing varnode " << std::endl;
+    // vn->printRaw(std::cerr);
+    // std::cerr << " of type ==> ";
+    // vn->getType()->printRaw(std::cerr);
+    // std::cerr << std::endl;
+    AddrSpace *space = vn->getSpace();
+    
+    if(vn->isConstant())
+    {
+        return llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
+    }
+        
+    else
+    {
+        auto iter = LLVM_ValueMap.find(vn);
+        if (iter != LLVM_ValueMap.end())
+        {
+            return (*iter).second;
+        }
+            
+        else
+        {
+            return nullptr;
+        }
+    }
+}
 void PrintLLVM::buildOp(const PcodeOp *op)
 {
 }
 void PrintLLVM::buildOpCopy(const PcodeOp *op)
 {
+    
 }
 void PrintLLVM::buildOpLoad(const PcodeOp *op)
 {
@@ -2368,15 +2397,85 @@ void PrintLLVM::buildOpStore(const PcodeOp *op)
 }
 void PrintLLVM::buildOpBranch(const PcodeOp *op)
 {
+    auto bb = op->getParent();
+    auto iter = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(0)));
+    if (iter != LLVM_BlockMap.end())
+    {
+        auto nextBB = (*iter).second;
+        IRBuilder->CreateBr(nextBB);
+    }
 }
 void PrintLLVM::buildOpCbranch(const PcodeOp *op)
 {
+    llvm::BasicBlock *btrue;
+    llvm::BasicBlock *bfalse;
+    auto bb = op->getParent();
+    if(op->isFallthruTrue())
+    {
+        btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+        bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+    }
+    else
+    {
+        btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+        bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+    }
+    auto cond = getVarnodeValue(op->getIn(1));
+    IRBuilder->CreateCondBr(cond, btrue, bfalse);
 }
 void PrintLLVM::buildOpBranchind(const PcodeOp *op)
 {
 }
 void PrintLLVM::buildOpCall(const PcodeOp *op)
 {
+    const Varnode * callpoint = op->getIn(0);
+    FuncCallSpecs *fc;
+    llvm::Function *func;
+    llvm::Value* out;
+    
+    if(callpoint->getSpace()->getType() == IPTR_FSPEC)
+    {
+        fc = FuncCallSpecs::getFspecFromConst(callpoint->getAddr());
+        Funcdata *fd = fc->getFuncdata();
+        std::cerr<< "Processing func call " << std::endl;
+        std::cerr << fd->getName();
+        std::cerr << std::endl;
+        auto iter = LLVM_FunctionMap.find(fd);
+        if (iter == LLVM_FunctionMap.end())
+        {
+            func = buildFunctionDeclaration(fd);
+            LLVM_FunctionMap.insert(std::make_pair(fd, func));
+        }
+        else
+        {
+            func = iter->second;
+        }
+        auto count = op->numInput() - 1;
+        if (count > 0)
+        {
+            std::vector<llvm::Value *> args;
+            for (int i = 1; i <=count; ++i)
+            {
+                const Varnode *vn = op->getIn(i);
+                args.push_back(getVarnodeValue(vn));
+            }
+            out = IRBuilder->CreateCall(func, args);
+        }
+        else
+        {
+            out = IRBuilder->CreateCall(func);
+        }
+        if (op->getOut() != (Varnode *)0)
+        {
+            const Varnode *vn = op->getOut();
+            LLVM_ValueMap.insert(std::make_pair(vn, out));
+        }
+    }
+
+    // auto opcode = op->getOpcode();
+    // auto opCall = dynamic_cast<TypeOpCall*>(opcode);
+    
+    // opCall->getInputLocal(op, 0);
 }
 void PrintLLVM::buildOpCallind(const PcodeOp *op)
 {
@@ -3198,6 +3297,7 @@ llvm::Function *PrintLLVM::buildFunctionDeclaration(const Funcdata *fd)
     auto *FunctionType = llvm::FunctionType::get(OutputType, InputTypes, false);
     auto *F = llvm::Function::Create(FunctionType, llvm::Function::ExternalLinkage, fd->getName(),
                                      LLVM_Module.get());
+    LLVM_FunctionMap.insert(std::make_pair(fd, F));
     unsigned Idx = 0;
     for(auto &Arg : F->args())
         Arg.setName("arg" + std::to_string(Idx++));
@@ -3354,29 +3454,34 @@ void PrintLLVM::buildBlockBasic(const BlockBasic *bb)
         buildInst(inst);
     }
     inst = bb->lastOp();
-    if(bb->sizeOut() == 2)
-    {
-        llvm::BasicBlock *btrue;
-        llvm::BasicBlock *bfalse;
-        if(inst->isFallthruTrue())
-        {
-            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-        }
-        else
-        {
-            btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-            bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-        }
-        auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
-        IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
-    }
-    else if(bb->sizeOut() == 1)
+    if (!inst->isBranch() && bb->sizeOut() == 1)
     {
         auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
         IRBuilder->CreateBr(next);
     }
-    else
+    // if(bb->sizeOut() == 2)
+    // {
+        // llvm::BasicBlock *btrue;
+        // llvm::BasicBlock *bfalse;
+        // if(inst->isFallthruTrue())
+        // {
+        //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+        //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+        // }
+        // else
+        // {
+        //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+        //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+        // }
+        // auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
+        // IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
+    // }
+    // else if(bb->sizeOut() == 1)
+    // {
+    //     auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+    //     IRBuilder->CreateBr(next);
+    // }
+    if(bb->sizeOut() == 0)
     {
         auto rtype = translateType(bb->getFuncdata()->getFuncProto().getOutputType());
         llvm::Value *dummy_ret;
@@ -3484,7 +3589,7 @@ void PrintLLVM::buildBlockGraph(const BlockGraph *bl, llvm::Function *func)
         auto blk = dynamic_cast<BlockBasic *>(*iter);
         llvm::BasicBlock *bb = llvm::BasicBlock::Create(
             *LLVM_Context, std::to_string((blk)->getEntryAddr().getOffset()), func);
-        LLVM_BlockMap.insert(std::pair(blk, bb));
+        LLVM_BlockMap.insert(std::make_pair(blk, bb));
     }
     auto real_entry = LLVM_BlockMap.find(dynamic_cast<BlockBasic *>(*list.begin()))->second;
     auto entry = &(func->getEntryBlock());

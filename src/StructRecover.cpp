@@ -92,7 +92,7 @@ class AssemblyRaw : public AssemblyEmit
 			std::stringstream ss;
 			addr.printRaw(ss);
 			ss << ": " << mnem << ' ' << body;
-			std::cerr << ss.str() << std::endl;
+			std::cout << ss.str() << std::endl;
 		}
 };
 
@@ -201,7 +201,7 @@ class PcodeRawOut : public PcodeEmit
 					print_vardata(ss, vars[i]);
 			    }
 		    }
-            std::cerr << ss.str() << std::endl;
+            std::cout << ss.str() << std::endl;
 			// rz_cons_printf("    %s\n", ss.str().c_str());
 	    }
 };
@@ -217,7 +217,7 @@ static void dumpPcode(const Translate *trans, uint64_t Start, uint64_t Size)
   Address lastaddr(trans->getDefaultCodeSpace(),Start + Size); // Last address
 
   while(addr < lastaddr) {
-    std::cerr << "--- ";
+    std::cout << "--- ";
     trans->printAssembly(assememit,addr);
     length = trans->oneInstruction(emit,addr); // Translate instruction
     addr = addr + length;		// Advance to next instruction
@@ -306,7 +306,7 @@ void dump(PcodeOp *pcode) {
             print_vardata(ss, *(pcode->getIn(i)));
         }
     }
-    std::cerr << ss.str() << std::endl;
+    std::cout << ss.str() << std::endl;
 }
 
 void printElapsedTimeSince(std::chrono::time_point<std::chrono::high_resolution_clock> Start)
@@ -319,6 +319,20 @@ void printElapsedTimeSince(std::chrono::time_point<std::chrono::high_resolution_
     else
         std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(End - Start).count()
                   << "ms)" << std::endl;
+}
+
+template<class TupType, size_t... I>
+void print(const TupType& _tup, std::index_sequence<I...>)
+{
+    std::cout << "(";
+    (..., (std::cout << (I == 0? "" : ", ") << std::get<I>(_tup)));
+    std::cout << ")\n";
+}
+
+template<class... T>
+void print (const std::tuple<T...>& _tup)
+{
+    print(_tup, std::make_index_sequence<sizeof...(T)>());
 }
 
 int main(int argc, char **argv)
@@ -361,22 +375,22 @@ int main(int argc, char **argv)
     }
     catch(std::exception &e)
     {
-        std::cerr << "Error: " << e.what() << "\nTry '" << argv[0]
+        std::cout << "Error: " << e.what() << "\nTry '" << argv[0]
                   << " --help' for more information.\n";
         return 1;
     }
     
     if(vm.count("input-file") < 1)
     {
-        std::cerr << "Error: missing input file\nTry '" << argv[0]
+        std::cout << "Error: missing input file\nTry '" << argv[0]
                   << " --help' for more information.\n";
         return 1;
     }
 
-    std::cerr << "starting sleigh library" << std::endl;
+    std::cout << "starting sleigh library" << std::endl;
     startDecompilerLibrary(vm["sleigh-home"].as<std::string>().c_str());
 
-    std::cerr << "Reading initial gtirb representation " << std::flush;
+    std::cout << "Reading initial gtirb representation " << std::flush;
     auto StartReadBaseIR = std::chrono::high_resolution_clock::now();
     std::string filename = vm["input-file"].as<std::string>();
     std::ifstream In(filename);
@@ -384,7 +398,7 @@ int main(int argc, char **argv)
     auto NewIRp = gtirb::IR::load(Context, In);
     if(!NewIRp)
     {
-        std::cerr << "\nERROR: " << filename << ": " << NewIRp.getError().message() << std::endl;
+        std::cout << "\nERROR: " << filename << ": " << NewIRp.getError().message() << std::endl;
         return 1;
     }
     auto IR = *NewIRp;
@@ -395,98 +409,151 @@ int main(int argc, char **argv)
 
     if(!IR)
     {
-        std::cerr << "There was a problem loading the GTIRB file " << filename << std::endl;
+        std::cout << "There was a problem loading the GTIRB file " << filename << std::endl;
         return 1;
     }
 
     for(auto Module = IR->modules_begin(); Module != IR->modules_end(); ++Module)
     {
         auto BinaryPath = Module->getBinaryPath();
-        std::cerr << "Module " << Module->getName() << ": " << BinaryPath << std::endl;
-        BfdArchitecture arch(BinaryPath, "default", &std::cerr);
+        std::cout << "Module " << Module->getName() << ": " << BinaryPath << std::endl;
+        BfdArchitecture arch(BinaryPath, "default", &std::cout);
         try {
             DocumentStorage store;
             arch.init(store);
-            arch.print->setOutputStream(&std::cerr);
+            arch.print->setOutputStream(&std::cout);
             arch.setPrintLanguage("llvm-language");
         } catch (LowlevelError& e) {
-            std::cerr << "Error: " << e.explain << std::endl;
+            std::cout << "Error: " << e.explain << std::endl;
             return 1;
         }
         auto *FunctionEntries = Module->getAuxData<gtirb::schema::FunctionEntries>();
         auto *FunctionBlocks = Module->getAuxData<gtirb::schema::FunctionBlocks>();
         auto *FunctionNames = Module->getAuxData<gtirb::schema::FunctionNames>();
         auto *SymbolForwardings = Module->getAuxData<gtirb::schema::SymbolForwarding>();
+        auto *SymbolicExpressionSizes = Module->getAuxData<gtirb::schema::SymbolicExpressionSizes>();
+        auto *ElfSymbolInfo = Module->getAuxData<gtirb::schema::ElfSymbolInfo>();
+        auto *DynamicEntries = Module->getAuxData<gtirb::schema::DynamicEntries>();
+        auto *Relocations = Module->getAuxData<gtirb::schema::Relocations>();
+        auto *Encodings = Module->getAuxData<gtirb::schema::Encodings>();
         std::map<uint64_t, std::string> SymbolForwardingsMap;
+        std::cout << "Listing SymbolForwardings" << std::endl;
         for (const auto &[SymUUID0, SymUUID1]: *SymbolForwardings) {
             auto Sym0 = gtirb::Node::getByUUID(Context, SymUUID0);
             auto Sym1 = gtirb::Node::getByUUID(Context, SymUUID1);
             auto SymName0 = dyn_cast_or_null<gtirb::Symbol>(Sym0);
             auto SymName1 = dyn_cast_or_null<gtirb::Symbol>(Sym1);
-            std::cerr << SymName0->getAddress().value() << "==>" << SymName0->getName() << " -> " << SymName1->getName() << std::endl;
+            std::cout << SymName0->getAddress().value() << "==>" << SymName0->getName() << " -> " << SymName1->getName() << std::endl;
             SymbolForwardingsMap.insert(std::pair<uint64_t, std::string>(static_cast<uint64_t>(SymName0->getAddress().value()), SymName1->getName()));
         }
+        std::cout << "-----------------------" << std::endl;
+        std::cout << "Listing ElfSymbolInfo" << std::endl;
+        for (const auto &[SymUUID, SymbolInfo]: *ElfSymbolInfo) {
+            auto Sym = gtirb::Node::getByUUID(Context, SymUUID);
+            auto SymName = dyn_cast_or_null<gtirb::Symbol>(Sym);
+            if (SymName->getAddress().has_value())
+            {
+                std::cout << SymName->getAddress().value() << "==>" << SymName->getName() << " -> ";
+            }
+            else 
+            {
+                std::cout << "unkonwn ==>" << SymName->getName() << " -> ";
+            }
+            print(SymbolInfo);
+        }
+        std::cout << "-----------------------" << std::endl;
+        std::cout << "Listing SymbolicExpressionSizes" << std::endl;
+        for (const auto &[Offset, SymSize]: *SymbolicExpressionSizes) {
+            auto ByteIntervalNode = gtirb::Node::getByUUID(Context, Offset.ElementId);
+            auto ByteInterval = dyn_cast_or_null<gtirb::ByteInterval>(ByteIntervalNode);
+            auto Addr = ByteInterval->getAddress().value() + Offset.Displacement;
+            std::cout << Addr << "==>" << SymSize << std::endl;
+        }
+        std::cout << "-----------------------" << std::endl;
+        std::cout << "Listing DynamicEntries" << std::endl;
+        for (const auto &Entry: *DynamicEntries) {
+            print(Entry);
+        }
+        std::cout << "-----------------------" << std::endl;
+        if (Relocations)
+        {
+            std::cout << "Listing Relocations" << std::endl;
+            for (const auto Reloc: *Relocations) {
+                print(Reloc);
+            }
+            std::cout << "-----------------------" << std::endl;
+        }
+        std::cout << "Listing Encodings" << std::endl;
+        for (const auto &[UUID, Encoding]: *Encodings) {
+            auto DataBlockNode = gtirb::Node::getByUUID(Context, UUID);
+            auto DataBlock = dyn_cast_or_null<gtirb::DataBlock>(DataBlockNode);
+            std::cout << DataBlock->getAddress() << "==>" << DataBlock->getSize() << " " << Encoding << std::endl;
+        }
+        std::cout << "-----------------------" << std::endl;
+        std::cout << "Listing FunctionEntries" << std::endl;
         vector<uint64_t> FunctionEntryAddresses;
         for(const auto &[FunctionUUID, Entries] : *FunctionEntries)
         {
-            std::cerr << "FunctionUUID: " << boost::uuids::to_string(FunctionUUID) << std::endl;
+            std::cout << "FunctionUUID: " << boost::uuids::to_string(FunctionUUID) << std::endl;
             auto NameUUID = (*FunctionNames)[FunctionUUID];
             auto FunctionNameUUID = gtirb::Node::getByUUID(Context, NameUUID);
             auto FunctionName = dyn_cast_or_null<gtirb::Symbol>(FunctionNameUUID);
             if(!FunctionName)
             {
-                std::cerr << "There was a problem loading the FunctionName aux data table\n";
+                std::cout << "There was a problem loading the FunctionName aux data table\n";
                 return 1;
             }
             else
             {
-                std::cerr << "FunctionName: " << FunctionName->getName() << std::endl;
+                std::cout << "FunctionName: " << FunctionName->getName() << std::endl;
             }
             for (auto &Entry: Entries) {
                 auto EntryBlockNode = gtirb::Node::getByUUID(Context, Entry);
                 auto EntryBlock = dyn_cast_or_null<gtirb::CodeBlock>(EntryBlockNode);
                 uint64_t Addr = static_cast<uint64_t>(*(EntryBlock->getAddress()));
-                std::cerr << "Entry at " << Addr << std::endl;
+                std::cout << "Entry at " << Addr << std::endl;
                 auto iter = SymbolForwardingsMap.find(Addr);
                 auto Name = iter == SymbolForwardingsMap.end() ? FunctionName->getName() : iter->second;
                 arch.symboltab->getGlobalScope()->addFunction(Address(arch.getDefaultCodeSpace(), Addr), Name);
                 FunctionEntryAddresses.push_back(Addr);
             }
-            auto It = FunctionBlocks->find(FunctionUUID);
-            assert(It != FunctionBlocks->end());
-            auto &Blocks = It->second;
-            for(auto BlockUUID : Blocks)
-            {
-                auto BlockNode = gtirb::Node::getByUUID(Context, BlockUUID);
-                assert(BlockNode);
-                auto Block = dyn_cast_or_null<gtirb::CodeBlock>(BlockNode);
-                assert(Block);
-                std::cerr << "    " << Block->getAddress() << std::endl;
-                uint64_t Addr = static_cast<uint64_t>(*(Block->getAddress()));
-                uint64_t Size = Block->getSize();
-                try {
+            // auto It = FunctionBlocks->find(FunctionUUID);
+            // assert(It != FunctionBlocks->end());
+            // auto &Blocks = It->second;
+            // for(auto BlockUUID : Blocks)
+            // {
+            //     auto BlockNode = gtirb::Node::getByUUID(Context, BlockUUID);
+            //     assert(BlockNode);
+            //     auto Block = dyn_cast_or_null<gtirb::CodeBlock>(BlockNode);
+            //     assert(Block);
+            //     std::cout << "    " << Block->getAddress() << std::endl;
+            //     uint64_t Addr = static_cast<uint64_t>(*(Block->getAddress()));
+            //     uint64_t Size = Block->getSize();
+            //     try {
                     // dumpPcode(arch.translate, Addr, Size);
                     // dumpAssembly(arch.translate, Addr, Size);
-                }
-                catch (LowlevelError e) {
-                    std::cerr << e.explain << std::endl;
-                    return -1;
-                }
-            }
+            //     }
+            //     catch (LowlevelError e) {
+            //         std::cout << e.explain << std::endl;
+            //         return -1;
+            //     }
+            // }
         }
+        std::cout << "-----------------------" << std::endl;
+        std::cout << "Lifting Functions" << std::endl;
         for (auto Addr : FunctionEntryAddresses) {
             Funcdata *func = arch.symboltab->getGlobalScope()->findFunction(Address(arch.getDefaultCodeSpace(), Addr));
             if (!func) {
-                std::cerr << "Function not found\n";
+                std::cout << "Function not found\n";
                 continue;
             }
-            std::cerr << func->getName() << std::endl;
+            std::cout << func->getName() << std::endl;
             auto action = arch.allacts.getCurrent();
             // action->setBreakPoint(Action::breakflags::break_start, "mergerequired");
             action->reset(*func);
-            // func->printRaw(std::cerr);
+            // func->printRaw(std::cout);
             auto res = action->perform(*func);
-            // func->printRaw(std::cerr);
+            func->printRaw(std::cout);
             AssemblyRaw assememit;
             
             for (auto &fb: func->getBasicBlocks().getList()) {
@@ -496,13 +563,13 @@ int main(int argc, char **argv)
                 }
             }
             // for (auto op = func->beginOpAll(); op != func->endOpAll(); ++op) {
-            //     std::cerr << "--- ";
+            //     std::cout << "--- ";
             //     arch.translate->printAssembly(assememit,op->first.getAddr());
             //     dump(op->second);
             // }
             dynamic_cast<PrintLLVM*>(arch.print)->buildFunction(func);
-            arch.print->docFunction(func);
-            std::cerr << "---" << std::endl;
+            // arch.print->docFunction(func);
+            std::cout << "---" << std::endl;
         }
         dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM();
     }

@@ -139,6 +139,7 @@ protected:
     std::unique_ptr<llvm::LLVMContext> LLVM_Context;
     std::unique_ptr<llvm::IRBuilder<>> IRBuilder;
     std::unique_ptr<llvm::Module> LLVM_Module;
+    std::map<const Funcdata *, llvm::Function *> LLVM_FunctionMap;
     std::map<const Varnode *, llvm::Value *> LLVM_ValueMap;
     std::map<const BlockBasic *, llvm::BasicBlock *> LLVM_BlockMap;
 
@@ -317,6 +318,7 @@ public:
     virtual void emitBlockInfLoop(const BlockInfLoop *bl);
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
+    llvm::Value* getVarnodeValue(const Varnode *vn);
     void buildOp(const PcodeOp *op);
     void buildOpCopy(const PcodeOp *op);
     void buildOpLoad(const PcodeOp *op);

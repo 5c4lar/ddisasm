@@ -291,9 +291,22 @@ public:
     } ///< Toggle whether implied extensions are hidden
 
     void buildFunction(const Funcdata *fd);
-    void dumpLLVM()
+    void dumpLLVM(std::string fname)
     {
-        LLVM_Module->print(llvm::errs(), nullptr);
+        if (fname == "-")
+        {
+            LLVM_Module->print(llvm::outs(), nullptr);
+        }
+        else
+        {
+            std::error_code EC;
+            llvm::raw_fd_ostream out(fname, EC);
+            if (EC)
+            {
+                throw LowlevelError("Error opening file: " + EC.message());
+            }
+            LLVM_Module->print(out, nullptr);
+        }
     }
     virtual ~PrintLLVM(void)
     {

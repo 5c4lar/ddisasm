@@ -2356,44 +2356,80 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
 
 llvm::Value* PrintLLVM::getVarnodeValue(const Varnode *vn)
 {
-    // std::cerr<< "Processing varnode " << std::endl;
-    // vn->printRaw(std::cerr);
-    // std::cerr << " of type ==> ";
-    // vn->getType()->printRaw(std::cerr);
-    // std::cerr << std::endl;
+    std::cerr<< "Processing varnode " << std::endl;
+    vn->printRaw(std::cerr);
+    std::cerr << " of type ==> ";
+    vn->getType()->printRaw(std::cerr);
+    std::cerr << std::endl;
     AddrSpace *space = vn->getSpace();
-    
-    if(vn->isConstant())
+    auto space_name = space->getName();
+    std::cerr << "Space name is " << space_name << std::endl;
+    auto ltype = translateType(vn->getType());
+    auto iter = LLVM_ValueMap.find(vn);
+    llvm::Value* res;
+    if (iter != LLVM_ValueMap.end())
     {
-        return llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
+        res = (*iter).second;
     }
-        
-    else
+    else if(space_name == "const")
     {
-        auto iter = LLVM_ValueMap.find(vn);
-        if (iter != LLVM_ValueMap.end())
+        if (ltype->isPointerTy())
         {
-            return (*iter).second;
+            res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
         }
-            
         else
         {
-            return nullptr;
+            res =  llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
         }
+        LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
+    else if (space_name == "ram")
+    {
+        res = LLVM_Module->getOrInsertGlobal("g_" + std::to_string(vn->getAddr().getOffset()), ltype);
+        LLVM_ValueMap.insert(std::make_pair(vn, res));
+    }
+    // else if (space_name == "stack")
+    // {
+    //     // res = IRBuilder->CreateAlloca(
+    //     //     ltype, 
+    //     //     llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1));
+    //     // LLVM_ValueMap.insert(std::make_pair(vn, res));
+    // }
+    else
+    {
+        if (ltype->isPointerTy())
+        {
+            res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
+        }
+        else {
+            res = llvm::Constant::getNullValue(ltype);
+        }
+        LLVM_ValueMap.insert(std::make_pair(vn, res));
+    }
+    return res;
 }
 void PrintLLVM::buildOp(const PcodeOp *op)
 {
 }
 void PrintLLVM::buildOpCopy(const PcodeOp *op)
 {
-    
+    auto in = getVarnodeValue(op->getIn(0));
+    auto otype = translateType(op->getOut()->getType());
+    auto vn = op->getOut();
+    auto out = IRBuilder->CreateLoad(otype, in);
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpLoad(const PcodeOp *op)
 {
+    auto in = getVarnodeValue(op->getIn(1));
+    auto otype = translateType(op->getOut()->getType());
+    auto vn = op->getOut();
+    auto out = IRBuilder->CreateLoad(otype, in);
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpStore(const PcodeOp *op)
 {
+
 }
 void PrintLLVM::buildOpBranch(const PcodeOp *op)
 {
@@ -2491,9 +2527,28 @@ void PrintLLVM::buildOpReturn(const PcodeOp *op)
 }
 void PrintLLVM::buildOpIntEqual(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateICmpEQ(lhs, rhs);
+    if (op->getOut() != (Varnode *)0)
+    {
+        const Varnode *vn = op->getOut();
+        LLVM_ValueMap.insert(std::make_pair(vn, out));
+    }
 }
 void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    lhs->print(llvm::errs());
+    std::cerr << std::endl;
+    rhs->print(llvm::errs());
+    auto out = IRBuilder->CreateICmpNE(lhs, rhs);
+    if (op->getOut() != (Varnode *)0)
+    {
+        const Varnode *vn = op->getOut();
+        LLVM_ValueMap.insert(std::make_pair(vn, out));
+    }
 }
 void PrintLLVM::buildOpIntSless(const PcodeOp *op)
 {
@@ -3294,7 +3349,7 @@ llvm::Function *PrintLLVM::buildFunctionDeclaration(const Funcdata *fd)
     const FuncProto *proto = &fd->getFuncProto();
     auto OutputType = buildPrototypeOutput(proto, fd);
     auto InputTypes = buildPrototypeInputs(proto);
-    auto *FunctionType = llvm::FunctionType::get(OutputType, InputTypes, false);
+    auto *FunctionType = llvm::FunctionType::get(OutputType, InputTypes, proto->isDotdotdot());
     auto *F = llvm::Function::Create(FunctionType, llvm::Function::ExternalLinkage, fd->getName(),
                                      LLVM_Module.get());
     LLVM_FunctionMap.insert(std::make_pair(fd, F));
@@ -3588,7 +3643,7 @@ void PrintLLVM::buildBlockGraph(const BlockGraph *bl, llvm::Function *func)
     {
         auto blk = dynamic_cast<BlockBasic *>(*iter);
         llvm::BasicBlock *bb = llvm::BasicBlock::Create(
-            *LLVM_Context, std::to_string((blk)->getEntryAddr().getOffset()), func);
+            *LLVM_Context, "bb_" + std::to_string((blk)->getEntryAddr().getOffset()), func);
         LLVM_BlockMap.insert(std::make_pair(blk, bb));
     }
     auto real_entry = LLVM_BlockMap.find(dynamic_cast<BlockBasic *>(*list.begin()))->second;

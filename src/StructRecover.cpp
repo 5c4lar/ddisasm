@@ -334,6 +334,15 @@ void print (const std::tuple<T...>& _tup)
 {
     print(_tup, std::make_index_sequence<sizeof...(T)>());
 }
+std::map<std::string, std::string> TypedefMap = {
+    {"size_t", "typedef uint8 size_t;"},
+    {"int", "typedef int4 int;"}
+};
+std::map<std::string, std::string> FuncProtoMap = {
+    {"malloc", "extern void *malloc(size_t size);"},
+    {"printf", "extern int printf(char * format, ...);"},
+    {"__cxa_finalize", "extern void __cxa_finalize(void * d);"}
+};
 
 int main(int argc, char **argv)
 {
@@ -437,6 +446,8 @@ int main(int argc, char **argv)
         auto *Relocations = Module->getAuxData<gtirb::schema::Relocations>();
         auto *Encodings = Module->getAuxData<gtirb::schema::Encodings>();
         std::map<uint64_t, std::string> SymbolForwardingsMap;
+        std::map<uint64_t, std::string> InternalFunc;
+        std::set<std::string> ExternalFunc;
         std::cout << "Listing SymbolForwardings" << std::endl;
         for (const auto &[SymUUID0, SymUUID1]: *SymbolForwardings) {
             auto Sym0 = gtirb::Node::getByUUID(Context, SymUUID0);
@@ -453,13 +464,21 @@ int main(int argc, char **argv)
             auto SymName = dyn_cast_or_null<gtirb::Symbol>(Sym);
             if (SymName->getAddress().has_value())
             {
+                auto Addr = static_cast<uint64_t>(SymName->getAddress().value());
                 std::cout << SymName->getAddress().value() << "==>" << SymName->getName() << " -> ";
+                if (std::get<1>(SymbolInfo) == "FUNC" && SymbolForwardingsMap.count(Addr) == 0) {
+                    InternalFunc.insert(std::make_pair(Addr, SymName->getName()));
+                }
+                print(SymbolInfo);
             }
             else 
             {
                 std::cout << "unkonwn ==>" << SymName->getName() << " -> ";
+                if (std::get<1>(SymbolInfo) == "FUNC") {
+                    ExternalFunc.insert(SymName->getName());
+                }
+                print(SymbolInfo);
             }
-            print(SymbolInfo);
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Listing SymbolicExpressionSizes" << std::endl;
@@ -541,7 +560,32 @@ int main(int argc, char **argv)
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Lifting Functions" << std::endl;
-        for (auto Addr : FunctionEntryAddresses) {
+        for (auto &[Name, Def]: TypedefMap)
+        {
+            std::cout << "    " << Name << std::endl;
+            auto s = std::istringstream(Def);
+            try {
+                parse_C(&arch, s);
+            }
+            catch (LowlevelError e) {
+                std::cerr << e.explain << std::endl;
+            }
+        }
+        for (auto Name: ExternalFunc) {
+            auto iter = FuncProtoMap.find(Name);
+            if (iter != FuncProtoMap.end()) {
+                std::cout << "    " << Name << std::endl;
+                auto s = std::istringstream(iter->second);
+                try {
+                    parse_C(&arch, s);
+                }
+                catch (LowlevelError e) {
+                    std::cerr << e.explain << std::endl;
+                }
+            }
+        }
+        for (auto &[Addr, Name] : InternalFunc) {
+            std::cout << "Lifting " << Name << " at " << Addr << std::endl;
             Funcdata *func = arch.symboltab->getGlobalScope()->findFunction(Address(arch.getDefaultCodeSpace(), Addr));
             if (!func) {
                 std::cout << "Function not found\n";
@@ -571,7 +615,8 @@ int main(int argc, char **argv)
             // arch.print->docFunction(func);
             std::cout << "---" << std::endl;
         }
-        dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM();
+        dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM(BinaryPath + ".ll");
+        dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM("-");
     }
 
     // Output GTIRB

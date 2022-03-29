@@ -142,6 +142,8 @@ protected:
     std::map<const Funcdata *, llvm::Function *> LLVM_FunctionMap;
     std::map<const Varnode *, llvm::Value *> LLVM_ValueMap;
     std::map<const BlockBasic *, llvm::BasicBlock *> LLVM_BlockMap;
+    std::map<const Address, llvm::Value *> LLVM_StackVarMap;
+    std::set<const PcodeOp *> PhiOps;
 
     // Routines that are specific to C/C++
     void buildTypeStack(const Datatype *ct,
@@ -332,7 +334,6 @@ public:
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
     llvm::Value* getVarnodeValue(const Varnode *vn);
-    void buildOp(const PcodeOp *op);
     void buildOpCopy(const PcodeOp *op);
     void buildOpLoad(const PcodeOp *op);
     void buildOpStore(const PcodeOp *op);

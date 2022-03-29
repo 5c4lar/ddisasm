@@ -617,6 +617,7 @@ int main(int argc, char **argv)
         }
         dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM(BinaryPath + ".ll");
         dynamic_cast<PrintLLVM*>(arch.print)->dumpLLVM("-");
+        // arch.print->docAllGlobals();
     }
 
     // Output GTIRB

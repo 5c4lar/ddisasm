@@ -2354,9 +2354,9 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
         emit->tagLine();
 }
 
-llvm::Value* PrintLLVM::getVarnodeValue(const Varnode *vn)
+llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
 {
-    std::cerr<< "Processing varnode " << std::endl;
+    std::cerr << "Processing varnode " << std::endl;
     vn->printRaw(std::cerr);
     std::cerr << " of type ==> ";
     vn->getType()->printRaw(std::cerr);
@@ -2366,42 +2366,43 @@ llvm::Value* PrintLLVM::getVarnodeValue(const Varnode *vn)
     std::cerr << "Space name is " << space_name << std::endl;
     auto ltype = translateType(vn->getType());
     auto iter = LLVM_ValueMap.find(vn);
-    llvm::Value* res;
-    if (iter != LLVM_ValueMap.end())
+    llvm::Value *res;
+    if(iter != LLVM_ValueMap.end())
     {
         res = (*iter).second;
     }
     else if(space_name == "const")
     {
-        if (ltype->isPointerTy())
+        if(ltype->isPointerTy())
         {
             res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
         }
         else
         {
-            res =  llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
+            res = llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
         }
         LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
-    else if (space_name == "ram")
+    else if(space_name == "ram")
     {
-        res = LLVM_Module->getOrInsertGlobal("g_" + std::to_string(vn->getAddr().getOffset()), ltype);
+        res =
+            LLVM_Module->getOrInsertGlobal("g_" + std::to_string(vn->getAddr().getOffset()), ltype);
         LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
-    else if (space_name == "stack")
+    else if(space_name == "stack")
     {
         res = IRBuilder->CreateAlloca(
-            ltype, 
-            llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1));
+            ltype, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1));
         LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
     else
     {
-        if (ltype->isPointerTy())
+        if(ltype->isPointerTy())
         {
             res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
         }
-        else {
+        else
+        {
             res = llvm::Constant::getNullValue(ltype);
         }
         LLVM_ValueMap.insert(std::make_pair(vn, res));
@@ -2414,13 +2415,16 @@ void PrintLLVM::buildOpCopy(const PcodeOp *op)
     auto in = getVarnodeValue(op->getIn(0));
     auto otype = translateType(op->getOut()->getType());
     auto vn = op->getOut();
-    if (vn->getSpace()->getName() == "stack") {
+    if(vn->getSpace()->getName() == "stack")
+    {
         auto iter = LLVM_StackVarMap.find(vn->getAddr());
-        if (iter != LLVM_StackVarMap.end()) {
+        if(iter != LLVM_StackVarMap.end())
+        {
             auto res = (*iter).second;
             IRBuilder->CreateStore(in, res);
         }
-        else {
+        else
+        {
             throw LowlevelError("Stack variable not found");
         }
     }
@@ -2444,8 +2448,8 @@ void PrintLLVM::buildOpStore(const PcodeOp *op)
 void PrintLLVM::buildOpBranch(const PcodeOp *op)
 {
     auto bb = op->getParent();
-    auto iter = LLVM_BlockMap.find(dynamic_cast<const BlockBasic*>(bb->getOut(0)));
-    if (iter != LLVM_BlockMap.end())
+    auto iter = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)));
+    if(iter != LLVM_BlockMap.end())
     {
         auto nextBB = (*iter).second;
         IRBuilder->CreateBr(nextBB);
@@ -2474,20 +2478,20 @@ void PrintLLVM::buildOpBranchind(const PcodeOp *op)
 }
 void PrintLLVM::buildOpCall(const PcodeOp *op)
 {
-    const Varnode * callpoint = op->getIn(0);
+    const Varnode *callpoint = op->getIn(0);
     FuncCallSpecs *fc;
     llvm::Function *func;
-    llvm::Value* out;
-    
+    llvm::Value *out;
+
     if(callpoint->getSpace()->getType() == IPTR_FSPEC)
     {
         fc = FuncCallSpecs::getFspecFromConst(callpoint->getAddr());
         Funcdata *fd = fc->getFuncdata();
-        std::cerr<< "Processing func call " << std::endl;
+        std::cerr << "Processing func call " << std::endl;
         std::cerr << fd->getName();
         std::cerr << std::endl;
         auto iter = LLVM_FunctionMap.find(fd);
-        if (iter == LLVM_FunctionMap.end())
+        if(iter == LLVM_FunctionMap.end())
         {
             func = buildFunctionDeclaration(fd);
             LLVM_FunctionMap.insert(std::make_pair(fd, func));
@@ -2497,10 +2501,10 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
             func = iter->second;
         }
         auto count = op->numInput() - 1;
-        if (count > 0)
+        if(count > 0)
         {
             std::vector<llvm::Value *> args;
-            for (int i = 1; i <=count; ++i)
+            for(int i = 1; i <= count; ++i)
             {
                 const Varnode *vn = op->getIn(i);
                 args.push_back(getVarnodeValue(vn));
@@ -2511,7 +2515,7 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
         {
             out = IRBuilder->CreateCall(func);
         }
-        if (op->getOut() != (Varnode *)0)
+        if(op->getOut() != (Varnode *)0)
         {
             const Varnode *vn = op->getOut();
             LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -2520,25 +2524,25 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
 
     // auto opcode = op->getOpcode();
     // auto opCall = dynamic_cast<TypeOpCall*>(opcode);
-    
+
     // opCall->getInputLocal(op, 0);
 }
 void PrintLLVM::buildOpCallind(const PcodeOp *op)
 {
-    const Varnode * callpoint = op->getIn(0);
+    const Varnode *callpoint = op->getIn(0);
     FuncCallSpecs *fc;
     llvm::Function *func;
-    llvm::Value* out;
-    
+    llvm::Value *out;
+
     if(callpoint->getSpace()->getType() == IPTR_FSPEC)
     {
         fc = FuncCallSpecs::getFspecFromConst(callpoint->getAddr());
         Funcdata *fd = fc->getFuncdata();
-        std::cerr<< "Processing func call " << std::endl;
+        std::cerr << "Processing func call " << std::endl;
         std::cerr << fd->getName();
         std::cerr << std::endl;
         auto iter = LLVM_FunctionMap.find(fd);
-        if (iter == LLVM_FunctionMap.end())
+        if(iter == LLVM_FunctionMap.end())
         {
             func = buildFunctionDeclaration(fd);
             LLVM_FunctionMap.insert(std::make_pair(fd, func));
@@ -2548,10 +2552,10 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
             func = iter->second;
         }
         auto count = op->numInput() - 1;
-        if (count > 0)
+        if(count > 0)
         {
             std::vector<llvm::Value *> args;
-            for (int i = 1; i <=count; ++i)
+            for(int i = 1; i <= count; ++i)
             {
                 const Varnode *vn = op->getIn(i);
                 args.push_back(getVarnodeValue(vn));
@@ -2562,7 +2566,7 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
         {
             out = IRBuilder->CreateCall(func);
         }
-        if (op->getOut() != (Varnode *)0)
+        if(op->getOut() != (Varnode *)0)
         {
             const Varnode *vn = op->getOut();
             LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -2583,11 +2587,8 @@ void PrintLLVM::buildOpIntEqual(const PcodeOp *op)
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateICmpEQ(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
 {
@@ -2597,84 +2598,72 @@ void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
     std::cerr << std::endl;
     rhs->print(llvm::errs());
     auto out = IRBuilder->CreateICmpNE(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSless(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateICmpSLT(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSlessEqual(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateICmpSLE(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntLess(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateICmpULT(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntLessEqual(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateICmpULE(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntZext(const PcodeOp *op)
 {
-
+    auto in = getVarnodeValue(op->getIn(0));
+    auto otype = translateType(op->getOut()->getType());
+    auto out = IRBuilder->CreateZExt(in, otype);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSext(const PcodeOp *op)
 {
+    auto in = getVarnodeValue(op->getIn(0));
+    auto otype = translateType(op->getOut()->getType());
+    auto out = IRBuilder->CreateSExt(in, otype);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntAdd(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateAdd(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSub(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
     auto out = IRBuilder->CreateSub(lhs, rhs);
-    if (op->getOut() != (Varnode *)0)
-    {
-        const Varnode *vn = op->getOut();
-        LLVM_ValueMap.insert(std::make_pair(vn, out));
-    }
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntCarry(const PcodeOp *op)
 {
@@ -2711,18 +2700,43 @@ void PrintLLVM::buildOpIntSright(const PcodeOp *op)
 }
 void PrintLLVM::buildOpIntMult(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateMul(lhs, rhs);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntDiv(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateUDiv(lhs, rhs);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSdiv(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateSDiv(lhs, rhs);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntRem(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateURem(lhs, rhs);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpIntSrem(const PcodeOp *op)
 {
+    auto lhs = getVarnodeValue(op->getIn(0));
+    auto rhs = getVarnodeValue(op->getIn(1));
+    auto out = IRBuilder->CreateSRem(lhs, rhs);
+    const Varnode *vn = op->getOut();
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpBoolNegate(const PcodeOp *op)
 {
@@ -2794,7 +2808,7 @@ void PrintLLVM::buildOpMultiequal(const PcodeOp *op)
 {
     auto vn = op->getOut();
     auto otype = translateType(vn->getType());
-    auto out  = IRBuilder->CreatePHI(otype, op->numInput());
+    auto out = IRBuilder->CreatePHI(otype, op->numInput());
     out->print(llvm::errs());
     PhiOps.insert(op);
     LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -2810,6 +2824,15 @@ void PrintLLVM::buildOpSubpiece(const PcodeOp *op)
 }
 void PrintLLVM::buildOpCast(const PcodeOp *op)
 {
+    auto vn = op->getOut();
+    auto otype = translateType(vn->getType());
+    auto in = getVarnodeValue(op->getIn(0));
+    llvm::Instruction::CastOps cast_op;
+    if (in->getType()->isPointerTy() && otype->isIntegerTy()) {
+        cast_op = llvm::Instruction::PtrToInt;
+    }    
+    auto out = IRBuilder->CreateCast(cast_op, in, otype);
+    LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpPtradd(const PcodeOp *op)
 {
@@ -2838,8 +2861,8 @@ void PrintLLVM::buildOpPopcountOp(const PcodeOp *op)
 
 void PrintLLVM::buildInst(const PcodeOp *inst)
 {
-    std::cerr << "Processing " << get_opname(inst->getOpcode()->getOpcode()) 
-            << " " << inst->getSeqNum() << std::endl;
+    std::cerr << "Processing " << get_opname(inst->getOpcode()->getOpcode()) << " "
+              << inst->getSeqNum() << std::endl;
     switch(inst->getOpcode()->getOpcode())
     {
         case CPUI_COPY:
@@ -3283,7 +3306,7 @@ void PrintLLVM::buildVarDecl(const Symbol *sym)
 
 {
     auto Addr = sym->getFirstWholeMap()->getAddr();
-    if (Addr.getSpace()->getName() == "stack")
+    if(Addr.getSpace()->getName() == "stack")
     {
         std::cerr << "Processing symbol " << sym->getName() << std::endl;
         Addr.printRaw(std::cerr);
@@ -3627,27 +3650,27 @@ void PrintLLVM::buildBlockBasic(const BlockBasic *bb)
         buildInst(inst);
     }
     inst = bb->lastOp();
-    if (!inst->isBranch() && bb->sizeOut() == 1)
+    if(!inst->isBranch() && bb->sizeOut() == 1)
     {
         auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
         IRBuilder->CreateBr(next);
     }
     // if(bb->sizeOut() == 2)
     // {
-        // llvm::BasicBlock *btrue;
-        // llvm::BasicBlock *bfalse;
-        // if(inst->isFallthruTrue())
-        // {
-        //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-        //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-        // }
-        // else
-        // {
-        //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-        //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-        // }
-        // auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
-        // IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
+    // llvm::BasicBlock *btrue;
+    // llvm::BasicBlock *bfalse;
+    // if(inst->isFallthruTrue())
+    // {
+    //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+    //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+    // }
+    // else
+    // {
+    //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
+    //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
+    // }
+    // auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
+    // IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
     // }
     // else if(bb->sizeOut() == 1)
     // {
@@ -3775,21 +3798,21 @@ void PrintLLVM::buildBlockGraph(const BlockGraph *bl, llvm::Function *func)
         IRBuilder->SetInsertPoint(bb);
         buildBlockBasic(blk);
     }
-    for (auto &op : PhiOps)
+    for(auto &op : PhiOps)
     {
         auto out = llvm::dyn_cast<llvm::PHINode>(LLVM_ValueMap.find(op->getOut())->second);
-        for (int i = 0; i < op->numInput(); i++)
+        for(int i = 0; i < op->numInput(); i++)
         {
             auto in = op->getIn(i);
-            if (in->getSpace()->getName() == "ram") // Not now :)
+            if(in->getSpace()->getName() == "ram") // Not now :)
             {
                 continue;
             }
             auto val = getVarnodeValue(in);
-            
+
             val->getType()->print(llvm::errs());
             auto def = in->getDef();
-            if (def)
+            if(def)
             {
                 auto block = LLVM_BlockMap[in->getDef()->getParent()];
                 out->addIncoming(val, block);

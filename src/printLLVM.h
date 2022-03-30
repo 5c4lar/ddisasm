@@ -142,7 +142,7 @@ protected:
     std::map<const Funcdata *, llvm::Function *> LLVM_FunctionMap;
     std::map<const Varnode *, llvm::Value *> LLVM_ValueMap;
     std::map<const BlockBasic *, llvm::BasicBlock *> LLVM_BlockMap;
-    std::map<const Address, llvm::Value *> LLVM_StackVarMap;
+    std::map<const Address, llvm::Value *> LLVM_LocVarMap;
     std::set<const PcodeOp *> PhiOps;
 
     // Routines that are specific to C/C++
@@ -235,6 +235,10 @@ protected:
     llvm::Type *buildPrototypeOutput(const FuncProto *proto, const Funcdata *fd);
     std::vector<llvm::Type *> buildPrototypeInputs(const FuncProto *proto);
 
+    llvm::Module &getModule(void) const
+    {
+        return *LLVM_Module;
+    }
     void buildBlockBasic(const BlockBasic *bb);
     void buildBlockGraph(const BlockGraph *bl, llvm::Function *func);
     void buildInst(const PcodeOp *op);
@@ -295,7 +299,7 @@ public:
     void buildFunction(const Funcdata *fd);
     void dumpLLVM(std::string fname)
     {
-        if (fname == "-")
+        if(fname == "-")
         {
             LLVM_Module->print(llvm::outs(), nullptr);
         }
@@ -303,7 +307,7 @@ public:
         {
             std::error_code EC;
             llvm::raw_fd_ostream out(fname, EC);
-            if (EC)
+            if(EC)
             {
                 throw LowlevelError("Error opening file: " + EC.message());
             }
@@ -333,7 +337,7 @@ public:
     virtual void emitBlockInfLoop(const BlockInfLoop *bl);
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
-    llvm::Value* getVarnodeValue(const Varnode *vn);
+    llvm::Value *getVarnodeValue(const Varnode *vn);
     void buildOpCopy(const PcodeOp *op);
     void buildOpLoad(const PcodeOp *op);
     void buildOpStore(const PcodeOp *op);

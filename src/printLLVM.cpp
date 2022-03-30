@@ -15,6 +15,7 @@
  */
 #include "printLLVM.h"
 
+#include <iomanip>
 #include <sleigh/libsleigh.hh>
 
 // Operator tokens for expressions
@@ -2385,15 +2386,31 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
     }
     else if(space_name == "ram")
     {
-        res =
-            LLVM_Module->getOrInsertGlobal("g_" + std::to_string(vn->getAddr().getOffset()), ltype);
+        std::stringstream gid;
+        gid << "global_" << vn->getAddr().getOffset();
+        res = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
         LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
-    else if(space_name == "stack")
+    else if(vn->isInput())
     {
-        res = IRBuilder->CreateAlloca(
-            ltype, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1));
-        LLVM_ValueMap.insert(std::make_pair(vn, res));
+        auto Addr = vn->getAddr();
+        auto iter = LLVM_LocVarMap.find(Addr);
+        if(iter != LLVM_LocVarMap.end())
+        {
+            res = (*iter).second;
+        }
+        else
+        {
+            if(ltype->isPointerTy())
+            {
+                res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
+            }
+            else
+            {
+                res = llvm::Constant::getNullValue(ltype);
+            }
+            LLVM_ValueMap.insert(std::make_pair(vn, res));
+        }
     }
     else
     {
@@ -2407,6 +2424,16 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         }
         LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
+    if(res->getType() != ltype)
+    {
+        if(ltype->isIntegerTy() && res->getType()->isIntegerTy())
+        {
+            res = IRBuilder->CreateIntCast(res, ltype, false);
+            LLVM_ValueMap.insert(std::make_pair(vn, res));
+        }
+    }
+    res->getType()->print(llvm::errs());
+    std::cerr << std::endl;
     return res;
 }
 
@@ -2417,8 +2444,8 @@ void PrintLLVM::buildOpCopy(const PcodeOp *op)
     auto vn = op->getOut();
     if(vn->getSpace()->getName() == "stack")
     {
-        auto iter = LLVM_StackVarMap.find(vn->getAddr());
-        if(iter != LLVM_StackVarMap.end())
+        auto iter = LLVM_LocVarMap.find(vn->getAddr());
+        if(iter != LLVM_LocVarMap.end())
         {
             auto res = (*iter).second;
             IRBuilder->CreateStore(in, res);
@@ -2581,6 +2608,17 @@ void PrintLLVM::buildOpConstructor(const PcodeOp *op)
 }
 void PrintLLVM::buildOpReturn(const PcodeOp *op)
 {
+    auto &Proto = op->getParent()->getFuncdata()->getFuncProto();
+    auto rtype = translateType(Proto.getOutputType());
+    if(rtype->isVoidTy())
+    {
+        IRBuilder->CreateRetVoid();
+    }
+    else
+    {
+        auto ret = getVarnodeValue(op->getIn(0));
+        IRBuilder->CreateRet(ret);
+    }
 }
 void PrintLLVM::buildOpIntEqual(const PcodeOp *op)
 {
@@ -2594,9 +2632,7 @@ void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
-    lhs->print(llvm::errs());
     std::cerr << std::endl;
-    rhs->print(llvm::errs());
     auto out = IRBuilder->CreateICmpNE(lhs, rhs);
     const Varnode *vn = op->getOut();
     LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -2828,9 +2864,10 @@ void PrintLLVM::buildOpCast(const PcodeOp *op)
     auto otype = translateType(vn->getType());
     auto in = getVarnodeValue(op->getIn(0));
     llvm::Instruction::CastOps cast_op;
-    if (in->getType()->isPointerTy() && otype->isIntegerTy()) {
+    if(in->getType()->isPointerTy() && otype->isIntegerTy())
+    {
         cast_op = llvm::Instruction::PtrToInt;
-    }    
+    }
     auto out = IRBuilder->CreateCast(cast_op, in, otype);
     LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
@@ -2863,6 +2900,8 @@ void PrintLLVM::buildInst(const PcodeOp *inst)
 {
     std::cerr << "Processing " << get_opname(inst->getOpcode()->getOpcode()) << " "
               << inst->getSeqNum() << std::endl;
+    inst->printRaw(std::cerr);
+    std::cerr << std::endl;
     switch(inst->getOpcode()->getOpcode())
     {
         case CPUI_COPY:
@@ -3314,7 +3353,7 @@ void PrintLLVM::buildVarDecl(const Symbol *sym)
         auto inst = IRBuilder->CreateAlloca(
             translateType(sym->getType()),
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1), sym->getName());
-        LLVM_StackVarMap.insert(std::make_pair(Addr, inst));
+        LLVM_LocVarMap.insert(std::make_pair(Addr, inst));
     }
 }
 
@@ -3496,7 +3535,11 @@ llvm::Function *PrintLLVM::buildFunctionDeclaration(const Funcdata *fd)
     LLVM_FunctionMap.insert(std::make_pair(fd, F));
     unsigned Idx = 0;
     for(auto &Arg : F->args())
+    {
+        auto ParamAddr = proto->getParam(Idx)->getAddress();
         Arg.setName("arg" + std::to_string(Idx++));
+        LLVM_LocVarMap.insert(std::make_pair(ParamAddr, &Arg));
+    }
     return F;
 }
 
@@ -3677,20 +3720,20 @@ void PrintLLVM::buildBlockBasic(const BlockBasic *bb)
     //     auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
     //     IRBuilder->CreateBr(next);
     // }
-    if(bb->sizeOut() == 0)
-    {
-        auto rtype = translateType(bb->getFuncdata()->getFuncProto().getOutputType());
-        llvm::Value *dummy_ret;
-        if(rtype->isVoidTy())
-        {
-            dummy_ret = nullptr;
-        }
-        else
-        {
-            dummy_ret = llvm::Constant::getNullValue(rtype);
-        }
-        IRBuilder->CreateRet(dummy_ret);
-    }
+    // if(bb->sizeOut() == 0)
+    // {
+    //     auto rtype = translateType(bb->getFuncdata()->getFuncProto().getOutputType());
+    //     llvm::Value *dummy_ret;
+    //     if(rtype->isVoidTy())
+    //     {
+    //         dummy_ret = nullptr;
+    //     }
+    //     else
+    //     {
+    //         dummy_ret = llvm::Constant::getNullValue(rtype);
+    //     }
+    //     IRBuilder->CreateRet(dummy_ret);
+    // }
 }
 
 void PrintLLVM::emitBlockBasic(const BlockBasic *bb)
@@ -3783,8 +3826,9 @@ void PrintLLVM::buildBlockGraph(const BlockGraph *bl, llvm::Function *func)
     for(iter = list.begin(); iter != list.end(); ++iter)
     {
         auto blk = dynamic_cast<BlockBasic *>(*iter);
-        llvm::BasicBlock *bb = llvm::BasicBlock::Create(
-            *LLVM_Context, "bb_" + std::to_string((blk)->getEntryAddr().getOffset()), func);
+        std::stringstream bid;
+        bid << "bb_" << std::hex << blk->getEntryAddr().getOffset();
+        llvm::BasicBlock *bb = llvm::BasicBlock::Create(*LLVM_Context, bid.str(), func);
         LLVM_BlockMap.insert(std::make_pair(blk, bb));
     }
     auto real_entry = LLVM_BlockMap.find(dynamic_cast<BlockBasic *>(*list.begin()))->second;

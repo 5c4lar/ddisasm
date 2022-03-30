@@ -2184,7 +2184,7 @@ llvm::Type *PrintLLVM::translateType(Datatype *dtype)
             case type_metatype::TYPE_PTRREL:
                 subtype = dynamic_cast<const TypePointer *>(dtype)->getPtrTo();
                 lsubtype = translateType(subtype);
-                if (lsubtype->isVoidTy())
+                if(lsubtype->isVoidTy())
                 {
                     return llvm::PointerType::get(llvm::Type::getInt8Ty(*LLVM_Context), 0);
                 }
@@ -2213,7 +2213,7 @@ llvm::Type *PrintLLVM::translateType(Datatype *dtype)
                 proto = dynamic_cast<const TypeCode *>(dtype)->getPrototype();
                 if(proto)
                 {
-                    proto->printRaw("ind", std::cerr);
+                    proto->printRaw("ind", std::cout);
                     return llvm::FunctionType::get(buildPrototypeOutput(proto),
                                                    buildPrototypeInputs(proto),
                                                    proto->isDotdotdot());
@@ -2221,8 +2221,7 @@ llvm::Type *PrintLLVM::translateType(Datatype *dtype)
                 else
                 {
                     return llvm::FunctionType::get(llvm::Type::getVoidTy(*LLVM_Context),
-                                                   std::vector<llvm::Type *>(),
-                                                   false);
+                                                   std::vector<llvm::Type *>(), false);
                     // return llvm::Type::getIntNTy(*LLVM_Context, dtype->getSize() * 8);
                 }
                 break;
@@ -2369,14 +2368,14 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
 
 llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
 {
-    std::cerr << "Processing varnode " << std::endl;
-    vn->printRaw(std::cerr);
-    std::cerr << " of type ==> ";
-    vn->getType()->printRaw(std::cerr);
-    std::cerr << std::endl;
+    std::cout << "Processing varnode " << std::endl;
+    vn->printRaw(std::cout);
+    std::cout << " of type ==> ";
+    vn->getType()->printRaw(std::cout);
+    std::cout << std::endl;
     AddrSpace *space = vn->getSpace();
     auto space_name = space->getName();
-    std::cerr << "Space name is " << space_name << std::endl;
+    std::cout << "Space name is " << space_name << std::endl;
     auto ltype = translateType(vn->getType());
     auto iter = LLVM_ValueMap.find(vn);
     llvm::Value *res;
@@ -2388,11 +2387,11 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
     {
         if(ltype->isPointerTy())
         {
-            if (vn->getAddr().getOffset() != 0)
+            if(vn->getAddr().getOffset() != 0)
             {
                 std::stringstream gid;
                 gid << "global_" << std::hex << vn->getAddr().getOffset();
-                ltype = translateType(dynamic_cast<TypePointer*>(vn->getType())->getPtrTo());
+                ltype = translateType(dynamic_cast<TypePointer *>(vn->getType())->getPtrTo());
                 res = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
                 LLVM_ValueMap.insert(std::make_pair(vn, res));
             }
@@ -2410,7 +2409,7 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
     else if(space_name == "ram" || space_name == "stack")
     {
         auto iter = LLVM_LocVarMap.find(vn->getAddr());
-        if (vn->isInput() && iter != LLVM_LocVarMap.end())
+        if(vn->isInput() && iter != LLVM_LocVarMap.end())
         {
             auto loc = (*iter).second;
             res = IRBuilder->CreateLoad(ltype, loc);
@@ -2430,11 +2429,11 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         auto ArgMap = LLVM_FuncArgMap[curfunc];
         auto iterArg = ArgMap.find(Addr);
         auto iterLoc = LLVM_LocVarMap.find(Addr);
-        if (iterArg != ArgMap.end())
+        if(iterArg != ArgMap.end())
         {
             res = (*iterArg).second;
         }
-        else if (iterLoc != LLVM_LocVarMap.end())
+        else if(iterLoc != LLVM_LocVarMap.end())
         {
             res = (*iterLoc).second;
         }
@@ -2471,8 +2470,8 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
     //         LLVM_ValueMap.insert(std::make_pair(vn, res));
     //     }
     // }
-    res->getType()->print(llvm::errs());
-    std::cerr << std::endl;
+    res->getType()->print(llvm::outs());
+    std::cout << std::endl;
     return res;
 }
 
@@ -2481,9 +2480,9 @@ llvm::FunctionType *PrintLLVM::getCallType(const PcodeOp *op)
     llvm::Value *out;
     const Varnode *callpoint = op->getIn(0);
     auto FuncValue = getVarnodeValue(callpoint);
-    llvm::Type* OutputType;
+    llvm::Type *OutputType;
     std::vector<llvm::Type *> InputTypes;
-    if (op->getOut())
+    if(op->getOut())
     {
         OutputType = translateType(op->getOut()->getType());
     }
@@ -2491,7 +2490,7 @@ llvm::FunctionType *PrintLLVM::getCallType(const PcodeOp *op)
     {
         OutputType = llvm::Type::getVoidTy(*LLVM_Context);
     }
-    for (int i = 1; i <= op->numInput() - 1; ++i)
+    for(int i = 1; i <= op->numInput() - 1; ++i)
     {
         const Varnode *in = op->getIn(i);
         InputTypes.push_back(translateType(in->getType()));
@@ -2574,9 +2573,9 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
     {
         fc = FuncCallSpecs::getFspecFromConst(callpoint->getAddr());
         Funcdata *fd = fc->getFuncdata();
-        std::cerr << "Processing FuncValue call " << std::endl;
-        std::cerr << fd->getName();
-        std::cerr << std::endl;
+        std::cout << "Processing FuncValue call " << std::endl;
+        std::cout << fd->getName();
+        std::cout << std::endl;
         auto iter = LLVM_FunctionMap.find(fd);
         if(iter == LLVM_FunctionMap.end())
         {
@@ -2587,18 +2586,18 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
         {
             FuncValue = iter->second;
         }
-        if (llvm::dyn_cast<llvm::Function>(FuncValue)->getFunctionType() != FuncType)
+        if(llvm::dyn_cast<llvm::Function>(FuncValue)->getFunctionType() != FuncType)
         {
             FuncValue = IRBuilder->CreateBitOrPointerCast(FuncValue, FuncType->getPointerTo());
-            if (FuncValue)
+            if(FuncValue)
             {
-                std::cerr << "Cast success" << std::endl;
-                FuncValue->print(llvm::errs());
-                std::cerr << std::endl;
+                std::cout << "Cast success" << std::endl;
+                FuncValue->print(llvm::outs());
+                std::cout << std::endl;
             }
             else
             {
-                std::cerr << "Cast failed" << std::endl;
+                std::cout << "Cast failed" << std::endl;
             }
         }
         auto count = op->numInput() - 1;
@@ -2633,11 +2632,11 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
     llvm::Value *out;
     const Varnode *callpoint = op->getIn(0);
     auto FuncValue = getVarnodeValue(callpoint);
-    std::cerr << "Processing Indirect Call " << std::endl;
-    FuncValue->print(llvm::errs());
-    llvm::Type* OutputType;
+    std::cout << "Processing Indirect Call " << std::endl;
+    FuncValue->print(llvm::outs());
+    llvm::Type *OutputType;
     std::vector<llvm::Type *> InputTypes;
-    if (op->getOut())
+    if(op->getOut())
     {
         OutputType = translateType(op->getOut()->getType());
     }
@@ -2645,27 +2644,27 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
     {
         OutputType = llvm::Type::getVoidTy(*LLVM_Context);
     }
-    for (int i = 1; i <= op->numInput() - 1; ++i)
+    for(int i = 1; i <= op->numInput() - 1; ++i)
     {
         const Varnode *in = op->getIn(i);
         InputTypes.push_back(translateType(in->getType()));
     }
     auto *FuncType = llvm::FunctionType::get(OutputType, InputTypes, false);
-    std::cerr << std::endl;
+    std::cout << std::endl;
     FuncValue = IRBuilder->CreateBitOrPointerCast(FuncValue, FuncType->getPointerTo());
-    if (FuncValue)
+    if(FuncValue)
     {
-        std::cerr << "Cast success" << std::endl;
-        FuncValue->print(llvm::errs());
-        std::cerr << std::endl;
+        std::cout << "Cast success" << std::endl;
+        FuncValue->print(llvm::outs());
+        std::cout << std::endl;
     }
     else
     {
-        std::cerr << "Cast failed" << std::endl;
+        std::cout << "Cast failed" << std::endl;
     }
-    if (FuncValue && FuncType) 
+    if(FuncValue && FuncType)
     {
-        FuncType->print(llvm::errs());
+        FuncType->print(llvm::outs());
         auto count = op->numInput() - 1;
         if(count > 0)
         {
@@ -2717,7 +2716,7 @@ void PrintLLVM::buildOpIntNotEqual(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
-    std::cerr << std::endl;
+    std::cout << std::endl;
     auto out = IRBuilder->CreateICmpNE(lhs, rhs);
     const Varnode *vn = op->getOut();
     LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -3006,7 +3005,8 @@ void PrintLLVM::buildOpFloatNeg(const PcodeOp *op)
 void PrintLLVM::buildOpFloatAbs(const PcodeOp *op)
 {
     auto in = getVarnodeValue(op->getIn(0));
-    auto F = llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::fabs, in->getType());
+    auto F =
+        llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::fabs, in->getType());
     auto out = IRBuilder->CreateCall(F, in);
     const Varnode *vn = op->getOut();
     LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -3014,7 +3014,8 @@ void PrintLLVM::buildOpFloatAbs(const PcodeOp *op)
 void PrintLLVM::buildOpFloatSqrt(const PcodeOp *op)
 {
     auto in = getVarnodeValue(op->getIn(0));
-    auto F = llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::sqrt, in->getType());
+    auto F =
+        llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::sqrt, in->getType());
     auto out = IRBuilder->CreateCall(F, in);
     const Varnode *vn = op->getOut();
     LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -3044,7 +3045,8 @@ void PrintLLVM::buildOpFloatCeil(const PcodeOp *op)
 {
     auto in = getVarnodeValue(op->getIn(0));
     const Varnode *vn = op->getOut();
-    auto F = llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::ceil, in->getType());
+    auto F =
+        llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::ceil, in->getType());
     auto out = IRBuilder->CreateCall(F, in);
     LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
@@ -3052,7 +3054,8 @@ void PrintLLVM::buildOpFloatFloor(const PcodeOp *op)
 {
     auto in = getVarnodeValue(op->getIn(0));
     const Varnode *vn = op->getOut();
-    auto F = llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::floor, in->getType());
+    auto F =
+        llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::floor, in->getType());
     auto out = IRBuilder->CreateCall(F, in);
     LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
@@ -3060,14 +3063,15 @@ void PrintLLVM::buildOpFloatRound(const PcodeOp *op)
 {
     auto in = getVarnodeValue(op->getIn(0));
     const Varnode *vn = op->getOut();
-    auto F = llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::round, in->getType());
+    auto F =
+        llvm::Intrinsic::getDeclaration(LLVM_Module.get(), llvm::Intrinsic::round, in->getType());
     auto out = IRBuilder->CreateCall(F, in);
     LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpMultiequal(const PcodeOp *op)
 {
     auto vn = op->getOut();
-    if (vn->getSpace()->getName() == "ram") // No need to create phi node for memory
+    if(vn->getSpace()->getName() == "ram") // No need to create phi node for memory
     {
         return;
     }
@@ -3109,10 +3113,69 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
 {
     auto lhs = getVarnodeValue(op->getIn(0));
     auto rhs = getVarnodeValue(op->getIn(1));
+    const Varnode *vn = op->getOut();
+    std::cout << "Ptrsub Addr ";
+    op->getIn(1)->getAddr().printRaw(std::cout);
+    std::cout << std::endl;
+    auto Offset = op->getIn(1)->getOffset();
+    auto AddrLoc = Address(curfunc->getScopeLocal()->getSpaceId(), Offset);
+    auto AddrDataGlb = Address(glb->getDefaultDataSpace(), Offset);
+    auto AddrCodeGlb = Address(glb->getDefaultCodeSpace(), Offset);
+    auto iterLoc = LLVM_LocVarMap.find(AddrLoc);
+    auto iterGlb = LLVM_LocVarMap.find(AddrDataGlb);
+    auto otype = translateType(dynamic_cast<TypePointer *>(vn->getType())->getPtrTo());
+    llvm::Value *out;
+    // auto fc = glb->getDefaultCodeSpace()
+    if(iterLoc != LLVM_LocVarMap.end())
+    {
+        std::cout << "Found local in LocVarMap" << std::endl;
+        out = iterLoc->second;
+        out->print(llvm::outs());
+        std::cout << std::endl;
+        std::cout << "Local Var Type ";
+        auto loc_type = out->getType();
+        loc_type->print(llvm::outs());
+        std::cout << std::endl;
+        if (loc_type->getPointerElementType()->isArrayTy())
+        {
+            auto arrayType = llvm::dyn_cast<llvm::PointerType>(loc_type)->getElementType();
+            // auto elementType = llvm::dyn_cast<llvm::ArrayType>(arrayType)->getElementType();
+            // auto ptoType = otype->getPointerElementType();
+            // std::cout << "ArrayElementType " << std::endl;
+            // elementType->print(llvm::outs());
+            // std::cout << std::endl;
+            // std::cout << "PointerElementType " << std::endl;
+            // ptoType->print(llvm::outs());
+            // std::cout << std::endl;
+            // out = IRBuilder->CreateLoad(loc_type->getPointerElementType(), out);
+            std::vector <llvm::Value *> Indices = {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0), llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0)};
+            out = IRBuilder->CreateGEP(arrayType, out, Indices);
+        }
+        LLVM_ValueMap.insert(std::make_pair(vn, out));
+        return;
+    }
+    else if(iterGlb != LLVM_LocVarMap.end())
+    {
+        std::cout << "Found global in LocVarMap" << std::endl;
+        rhs = iterGlb->second;
+        LLVM_ValueMap.insert(std::make_pair(vn, rhs));
+        return;
+    }
+    // else if(fc)
+    // {
+    //     auto fd = fc->getFuncdata();
+    //     auto iterFunc = LLVM_FunctionMap.find(fd);
+    //     if(iterFunc != LLVM_FunctionMap.end())
+    //     {
+    //         std::cout << "Found in FunctionMap" << std::endl;
+    //         rhs = iterFunc->second;
+    //         LLVM_ValueMap.insert(std::make_pair(vn, rhs));
+    //         return;
+    //     }
+    // }
     auto lhs_val = IRBuilder->CreatePtrToInt(lhs, rhs->getType());
     auto res = IRBuilder->CreateAdd(lhs_val, rhs);
-    const Varnode *vn = op->getOut();
-    auto out = IRBuilder->CreateIntToPtr(res, translateType(vn->getType()));
+    out = IRBuilder->CreateIntToPtr(res, translateType(vn->getType()));
     LLVM_ValueMap.insert(std::make_pair(vn, out));
 }
 void PrintLLVM::buildOpSegmentOp(const PcodeOp *op)
@@ -3136,10 +3199,10 @@ void PrintLLVM::buildOpPopcountOp(const PcodeOp *op)
 
 void PrintLLVM::buildInst(const PcodeOp *inst)
 {
-    std::cerr << "Processing " << get_opname(inst->getOpcode()->getOpcode()) << " "
+    std::cout << "Processing " << get_opname(inst->getOpcode()->getOpcode()) << " "
               << inst->getSeqNum() << std::endl;
-    inst->printRaw(std::cerr);
-    std::cerr << std::endl;
+    inst->printRaw(std::cout);
+    std::cout << std::endl;
     switch(inst->getOpcode()->getOpcode())
     {
         case CPUI_COPY:
@@ -3585,13 +3648,16 @@ void PrintLLVM::buildVarDecl(const Symbol *sym)
     auto Addr = sym->getFirstWholeMap()->getAddr();
     if(Addr.getSpace()->getName() == "stack")
     {
-        std::cerr << "Processing symbol " << sym->getName() << std::endl;
-        Addr.printRaw(std::cerr);
-        std::cerr << std::endl;
+        std::cout << "Processing symbol " << sym->getName() << std::endl;
+        Addr.printRaw(std::cout);
+        std::cout << std::endl;
         auto inst = IRBuilder->CreateAlloca(
             translateType(sym->getType()),
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(*LLVM_Context), 1), sym->getName());
         LLVM_LocVarMap.insert(std::make_pair(Addr, inst));
+        std::cout << "Creating Loc Var: " << sym->getName() << " at ";
+        Addr.printRaw(std::cout);
+        std::cout << std::endl;
     }
 }
 
@@ -3778,6 +3844,9 @@ llvm::Function *PrintLLVM::buildFunctionDeclaration(const Funcdata *fd)
         auto ParamAddr = proto->getParam(Idx)->getAddress();
         Arg.setName("arg" + std::to_string(Idx++));
         ArgMap.insert(std::make_pair(ParamAddr, &Arg));
+        std::cout << "Creating Arg: " << Arg.getName().str() << " at ";
+        ParamAddr.printRaw(std::cout);
+        std::cout << std::endl;
     }
     LLVM_FuncArgMap.insert(std::make_pair(fd, ArgMap));
     return F;

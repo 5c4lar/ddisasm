@@ -35,6 +35,7 @@
 
 #include "AuxDataSchema.h"
 #include "Version.h"
+#include "llvm/Demangle/Demangle.h"
 #include "loadimage_bfd.h"
 #include "passes/FunctionInferencePass.h"
 #include "passes/NoReturnPass.h"
@@ -208,7 +209,6 @@ public:
             }
         }
         std::cout << ss.str() << std::endl;
-        // rz_cons_printf("    %s\n", ss.str().c_str());
     }
 };
 
@@ -348,7 +348,8 @@ std::map<std::string, std::string> TypedefMap = {{"size_t", "typedef uint8 size_
 std::map<std::string, std::string> FuncProtoMap = {
     {"malloc", "extern void *malloc(size_t size);"},
     {"printf", "extern int printf(char * format, ...);"},
-    {"__cxa_finalize", "extern void __cxa_finalize(void * d);"}};
+    {"__cxa_finalize", "extern void __cxa_finalize(void * d);"},
+    {"_Znwm", "extern void * _Znwm(size_t size);"}};
 
 namespace facts
 {
@@ -552,6 +553,7 @@ int main(int argc, char **argv)
 {
     registerAuxDataTypes();
     po::options_description desc("Allowed options");
+    llvm::ItaniumPartialDemangler demangler;
     desc.add_options()                                                  //
         ("help,h", "produce help message")                              //
         ("version", "display ddisasm version")                          //
@@ -630,10 +632,6 @@ int main(int argc, char **argv)
     for(auto Module = IR->modules_begin(); Module != IR->modules_end(); ++Module)
     {
         auto BinaryPath = Module->getBinaryPath();
-        if(BinaryPath.empty())
-        {
-            continue;
-        }
         std::cout << "Module " << Module->getName() << ": " << BinaryPath << std::endl;
         BfdArchitecture arch(BinaryPath, "default", &std::cout);
         try
@@ -826,6 +824,30 @@ int main(int argc, char **argv)
                     std::cerr << e.explain << std::endl;
                 }
             }
+            else
+            {
+                if(demangler.partialDemangle(Name.c_str()))
+                {
+                    std::cout << "    "  << Name << " not demangled" << std::endl;
+                }
+                else
+                {
+                    std::stringstream s;
+                    char *result = static_cast<char *>(malloc(0x20));
+                    size_t size = 0x20;
+                    result = demangler.getFunctionReturnType(result, &size);
+                    std::string FunctionReturnType(result, result + strlen(result));
+                    s << FunctionReturnType;
+                    result = demangler.getFunctionName(result, &size);
+                    std::string FunctionName(result, result + strlen(result));
+                    s << FunctionName;
+                    result = demangler.getFunctionParameters(result, &size);
+                    std::string FunctionParameters(result, result + strlen(result));
+                    s << FunctionParameters;
+                    free(result);
+                    std::cout << "    "  << Name << "==>" << s.str() << std::endl;
+                }
+            }
         }
         for(auto &[Addr, Name] : InternalFunc)
         {
@@ -865,6 +887,7 @@ int main(int argc, char **argv)
         }
         dynamic_cast<PrintLLVM *>(arch.print)->dumpLLVM(BinaryPath + ".ll");
         dynamic_cast<PrintLLVM *>(arch.print)->dumpLLVM("-");
+        arch.shutdown();
         // arch.print->docAllGlobals();
     }
 

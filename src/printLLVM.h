@@ -143,7 +143,9 @@ protected:
     std::map<const Varnode *, llvm::Value *> LLVM_ValueMap;
     std::map<const BlockBasic *, llvm::BasicBlock *> LLVM_BlockMap;
     std::map<const Address, llvm::Value *> LLVM_LocVarMap;
+    std::map<const Funcdata *, std::map<const Address, llvm::Value *>> LLVM_FuncArgMap;
     std::set<const PcodeOp *> PhiOps;
+    const Funcdata *curfunc;       ///< The current function being processed
 
     // Routines that are specific to C/C++
     void buildTypeStack(const Datatype *ct,
@@ -232,7 +234,7 @@ protected:
     bool buildScopeVarDecls(const Scope *symScope, int4 cat);
     llvm::Function *buildFunctionDeclaration(const Funcdata *fd);
     llvm::BasicBlock *buildLocalVarDecls(const Funcdata *fd, llvm::Function *func);
-    llvm::Type *buildPrototypeOutput(const FuncProto *proto, const Funcdata *fd);
+    llvm::Type *buildPrototypeOutput(const FuncProto *proto);
     std::vector<llvm::Type *> buildPrototypeInputs(const FuncProto *proto);
 
     llvm::Module &getModule(void) const
@@ -338,6 +340,7 @@ public:
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
     llvm::Value *getVarnodeValue(const Varnode *vn);
+    llvm::FunctionType *getCallType(const PcodeOp *op);
     void buildOpCopy(const PcodeOp *op);
     void buildOpLoad(const PcodeOp *op);
     void buildOpStore(const PcodeOp *op);
@@ -347,7 +350,6 @@ public:
     void buildOpCall(const PcodeOp *op);
     void buildOpCallind(const PcodeOp *op);
     void buildOpCallother(const PcodeOp *op);
-    void buildOpConstructor(const PcodeOp *op);
     void buildOpReturn(const PcodeOp *op);
     void buildOpIntEqual(const PcodeOp *op);
     void buildOpIntNotEqual(const PcodeOp *op);

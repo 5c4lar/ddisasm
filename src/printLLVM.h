@@ -150,8 +150,10 @@ protected:
         uint64_t addr;
         uint64_t size;
         std::vector<uint8_t> content;
-        GlobalSym(const string &n, uint64_t a, uint64_t s, std::vector<uint8_t> &c)
-            : name(n), addr(a), size(s), content(c)
+        std::string forwarding;
+        std::string encoding;
+        GlobalSym(const string &n, uint64_t a, uint64_t s,const std::vector<uint8_t> &c,const std::string &f, const std::string & encoding)
+            : name(n), addr(a), size(s), content(c), forwarding(f), encoding(encoding)
         {
         }
     };
@@ -354,8 +356,8 @@ public:
     virtual void emitBlockInfLoop(const BlockInfLoop *bl);
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
-    void setSym(uint64_t use_point, std::string name, uint64_t addr, uint64_t size,
-                std::vector<uint8_t> c)
+    void setSym(uint64_t use_point, std::string& name, uint64_t addr, uint64_t size,
+                std::vector<uint8_t>& c,  std::string encoding = "", std::string f = "")
     {
         auto iter = SymMap.find(addr);
         if(iter != SymMap.end())
@@ -364,14 +366,13 @@ public:
         }
         else
         {
-            auto sym = new GlobalSym(name, addr, size, c);
+            auto sym = new GlobalSym(name, addr, size, c, f, encoding);
             SymUseMap.insert(std::make_pair(use_point, sym));
             SymMap.insert(std::make_pair(addr, sym));
         }
-        std::cout << "Inserting UsePoint: " << std::hex << addr << " at " << std::hex << use_point
-                  << " of size " << std::hex << size << " : " << std::string(c.begin(), c.end())
-                  << std::endl;
     }
+    llvm::Constant* getInitializer(llvm::Type* type, GlobalSym* sym);
+    
     GlobalSym *getGlobalSym(const Varnode *vn);
     llvm::Value *getVarnodeValue(const Varnode *vn);
     llvm::FunctionType *getCallType(const PcodeOp *op);

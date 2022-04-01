@@ -16,9 +16,6 @@
 #include "Version.h"
 #include "llvm/Demangle/Demangle.h"
 #include "loadimage_bfd.h"
-#include "passes/FunctionInferencePass.h"
-#include "passes/NoReturnPass.h"
-#include "passes/SccPass.h"
 #include "printLLVM.h"
 
 // Modified version that starts with reading GTIRB instead of processing
@@ -563,11 +560,6 @@ int main(int argc, char **argv)
                       << desc << std::endl;
             return 1;
         }
-        if(vm.count("version"))
-        {
-            std::cout << DDISASM_FULL_VERSION_STRING << std::endl;
-            return EXIT_SUCCESS;
-        }
         po::notify(vm);
     }
     catch(std::exception &e)
@@ -600,8 +592,6 @@ int main(int argc, char **argv)
     }
     auto IR = *NewIRp;
 
-    // Add `ddisasmVersion' aux data table.
-    IR->addAuxData<gtirb::schema::DdisasmVersion>(DDISASM_FULL_VERSION_STRING);
     printElapsedTimeSince(StartReadBaseIR);
 
     if(!IR)
@@ -629,6 +619,8 @@ int main(int argc, char **argv)
         auto print_llvm = dynamic_cast<PrintLLVM *>(arch.print);
         auto string_manager = arch.stringManager;
         auto type_factory = arch.types;
+        auto code_space = arch.getDefaultCodeSpace();
+        auto data_space = arch.getDefaultDataSpace();
         auto glb_scope = arch.symboltab->getGlobalScope();
         auto *FunctionEntries = Module->getAuxData<gtirb::schema::FunctionEntries>();
         auto *FunctionBlocks = Module->getAuxData<gtirb::schema::FunctionBlocks>();
@@ -642,6 +634,7 @@ int main(int argc, char **argv)
         auto *SouffleFacts = Module->getAuxData<gtirb::schema::SouffleFacts>();
         auto *SymbolicOperand = facts::loadFacts(SouffleOutputs, "symbolic_operand");
         auto *OperandAttribute = facts::loadFacts(SouffleOutputs, "symbolic_operand_attribute");
+        auto *SymbolicExpr = facts::loadFacts(SouffleOutputs, "symbolic_expr");
         auto *String = facts::loadFacts(SouffleOutputs, "string");
         String->print(std::cout);
         std::map<uint64_t, std::string> SymbolForwardingsMap;
@@ -649,6 +642,7 @@ int main(int argc, char **argv)
         std::map<uint64_t, std::string> GlobalDataSymbolMap;
         std::map<uint64_t, std::set<uint64_t>> SymbolUsePointMap;
         std::map<uint64_t, std::string> OperandAttrMap;
+        std::map<uint64_t, std::string> EncodingMap;
         std::set<std::string> ExternalFunc;
         std::set<uint64_t> DataSymbolCandidateSet;
         std::set<uint64_t> DataSymbolSet;
@@ -673,7 +667,7 @@ int main(int argc, char **argv)
             }
             else if(type == "data")
             {
-                if(OperandAttrMap.count(use_point) == 0)
+                if(OperandAttrMap.count(use_point) == 0 || OperandAttrMap[use_point] != "PltRef")
                 {
                     DataSymbolCandidateSet.insert(sym_addr);
                 }
@@ -698,6 +692,33 @@ int main(int argc, char **argv)
             SymbolForwardingsMap.insert(std::pair<uint64_t, std::string>(
                 static_cast<uint64_t>(SymName0->getAddress().value()), SymName1->getName()));
         }
+        SymbolicExpr->print(std::cout);
+        for(auto &tuple : SymbolicExpr->tuples)
+        {
+            auto sym_addr = dynamic_cast<facts::UnsignedElement *>(tuple[0])->u;
+            auto expr = dynamic_cast<facts::StringElement *>(tuple[2])->str;
+            if (expr.rfind("FUN_", 0) == 0) { // pos=0 limits the search to the prefix
+                auto num = std::stoull(expr.substr(4, expr.size() - 4));
+                std::stringstream s;
+                s << "FUN_" << std::hex <<num;
+                SymbolForwardingsMap.insert(std::make_pair(sym_addr, s.str()));
+            }
+            else if (expr.rfind(".L_") == 0)
+            {
+                auto num = std::stoull(expr.substr(3, expr.size() - 3));
+                std::stringstream s;
+                s << ".L_" << std::hex <<num;
+                SymbolForwardingsMap.insert(std::make_pair(sym_addr, s.str()));
+            }
+            else if (expr.find("@") != std::string::npos)
+            {
+                continue;
+            }
+            else
+            {
+                SymbolForwardingsMap.insert(std::make_pair(sym_addr, expr));
+            }
+        }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Listing ElfSymbolInfo" << std::endl;
         for(const auto &[SymUUID, SymbolInfo] : *ElfSymbolInfo)
@@ -712,14 +733,23 @@ int main(int argc, char **argv)
                 {
                     InternalFunc.insert(std::make_pair(Addr, SymName->getName()));
                 }
-                else if(DataSymbolSet.count(Addr) != 0)
+                else if(DataSymbolSet.count(Addr) != 0 && GlobalDataSymbolMap.count(Addr) == 0)
                 {
                     GlobalDataSymbolMap.insert(std::make_pair(Addr, SymName->getName()));
                 }
-                // else if(DataSymbolSet.count(Addr) != 0)
-                // {
-                //     GlobalDataSymbolMap.insert(std::make_pair(Addr, SymbolForwardingsMap[Addr]));
-                // }
+                else if(GlobalDataSymbolMap.count(Addr))
+                {
+                    auto extern_name = GlobalDataSymbolMap[Addr];
+                    if (std::get<1>(SymbolInfo) != "OBJECT")
+                    {
+                        GlobalDataSymbolMap[Addr] = SymName->getName();
+                    }
+                    else
+                    {
+                        extern_name = SymName->getName();
+                    }
+                    SymbolForwardingsMap.insert(std::pair<uint64_t, std::string>(Addr, extern_name));
+                }
                 print(SymbolInfo);
             }
             else
@@ -758,29 +788,7 @@ int main(int argc, char **argv)
                       << Encoding;
             std::string s(DataBlock->bytes_begin<char>(), DataBlock->bytes_end<char>());
             std::cout << " " << s << std::endl;
-            // std::stringstream gid;
-            // gid << "global_" << std::hex << Addr;
-            // auto name = gid.str();
-            // auto diter = GlobalDataSymbolMap.find(Addr);
-            // if (diter != GlobalDataSymbolMap.end())
-            // {
-            //     name = diter->second;
-            // }
-            // auto basic_type = type_factory->getBase(1, type_metatype::TYPE_INT);
-            // auto array_type = type_factory->getTypeArray(DataBlock->getSize(), basic_type);
-            // auto sym = glb_scope->addSymbol(name, array_type);
-            // auto code_space = arch.getDefaultCodeSpace();
-            // auto data_space = arch.getDefaultDataSpace();
-            // auto iter = SymbolUsePointMap.find(Addr);
-            // if (iter != SymbolUsePointMap.end())
-            // {
-            //     auto SymAddr = Address(data_space, Addr);
-            //     for (auto use_point: iter->second)
-            //     {
-            //         auto SymUsePoint = Address(code_space, use_point);
-            //         glb_scope->addMapPoint(sym, SymAddr, SymUsePoint);
-            //     }
-            // }
+            EncodingMap.insert(std::pair<uint64_t, std::string>(Addr, Encoding));
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Listing FunctionEntries" << std::endl;
@@ -825,14 +833,23 @@ int main(int argc, char **argv)
             auto iter = SymbolUsePointMap.find(Addr);
             auto content = std::vector<uint8_t>(Datablock.bytes_begin<uint8_t>(),
                                                 Datablock.bytes_end<uint8_t>());
+            auto forwarding = SymbolForwardingsMap.count(Addr) != 0 ? SymbolForwardingsMap[Addr] : "";
+            auto data = std::string(content.begin(), content.end());
+            auto encoding = EncodingMap.count(Addr) != 0 ? EncodingMap[Addr] : "";
+            auto unkown_type = type_factory->getBase(1, type_metatype::TYPE_UNKNOWN);
+            auto sym = glb_scope->addSymbol(Name, unkown_type);
+            auto SymAddr = Address(data_space, Addr);
             if(iter != SymbolUsePointMap.end())
             {
                 for(auto use_point : iter->second)
                 {
-                    print_llvm->setSym(use_point, Name, Addr, size, content);
-                    std::cout << "Inserting UsePoint: " << std::hex << Addr << " at " << std::hex
-                              << use_point << " of size " << std::hex << size << " : "
-                              << std::string(content.begin(), content.end()) << std::endl;
+                    std::cout << "Processing Addr " << std::hex << Addr << std::endl;
+                    print_llvm->setSym(use_point, Name, Addr, size, content, encoding, forwarding);
+                    std::cout << "Inserting UsePoint: " << std::hex << Addr << " " << Name << " at "
+                              << std::hex << use_point << " of size " << std::hex << size << " : "
+                              << data << " forwarding to " << forwarding << std::endl;
+                    auto SymUsePoint = Address(code_space, use_point);
+                    glb_scope->addMapPoint(sym, SymAddr, SymUsePoint);
                 }
             }
         }

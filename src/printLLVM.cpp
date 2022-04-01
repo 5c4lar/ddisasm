@@ -2382,42 +2382,79 @@ PrintLLVM::GlobalSym *PrintLLVM::getGlobalSym(const Varnode *vn)
         std::cout << "Not found" << std::endl;
         return nullptr;
     }
-    // auto ct = dynamic_cast<TypePointer *>(vn->getType());
-    // auto scope = glb->getDefaultDataSpace();
-
-    // auto iter = SymUseMap.find(curop->getAddr().getOffset());
-    // std::cout << "Looking up at " << curop->getAddr().getOffset() << std::endl;
-    // auto val_addr = Address(glb->getDefaultDataSpace(), val);
-    // if (iter != SymUseMap.end())
-    // {
-    //     auto glb_sym = iter->second;
-    //     return glb_sym->content;
-    // if (glb_sym->addr == vn->getOffset())
-    // {
-
-    // std::vector<uint1> str_buf(glb_sym->size);
-    // glb->loader->loadFill(str_buf.data(), glb_sym->size, val_addr);
-    // return str_buf;
-    // }
-    // }
-    // auto use_point = Address(glb->getDefaultCodeSpace(), curop->getAddr().getOffset());
-    // auto sym = glb->symboltab->getGlobalScope()->findContainer(val_addr, 1, use_point);
-    // auto size = sym->getSize();
-    // uintb fullEncoding;
-    // Address stringaddr = glb->resolveConstant(spc, val, ct->getSize(), use_point, fullEncoding);
-    // if(stringaddr.isInvalid())
-    //     return std::string();
-    // if(!glb->symboltab->getGlobalScope()->isReadOnly(stringaddr, 1, Address()))
-    //     return std::string(); // Check that string location is readonly
-
-    // ostringstream str;
-    // Datatype *subct = ct->getPtrTo();
-    // StringManager *manager = glb->stringManager;
-
-    // Retrieve UTF8 version of string
-    // bool isTrunc = false;
-    // const vector<uint1> &buffer(manager->getStringData(stringaddr, subct, isTrunc));
-    // return std::string(buffer.data(), buffer.data() + buffer.size());
+}
+llvm::Constant *PrintLLVM::getInitializer(llvm::Type *type, GlobalSym *sym)
+{
+    uint8_t buffer[sym->size];
+    std::copy(sym->content.begin(), sym->content.end(), buffer);
+    if(type->isIntegerTy())
+    {
+        uint64_t val;
+        switch(type->getIntegerBitWidth())
+        {
+            case 1:
+                val = *reinterpret_cast<uint8_t *>(buffer);
+                break;
+            case 8:
+                val = *reinterpret_cast<uint8_t *>(buffer);
+                break;
+            case 16:
+                val = *reinterpret_cast<uint16_t *>(buffer);
+                break;
+            case 32:
+                val = *reinterpret_cast<uint32_t *>(buffer);
+                break;
+            case 64:
+                val = *reinterpret_cast<uint64_t *>(buffer);
+                break;
+            default:
+                throw LowlevelError("Unsupported integer type");
+        }
+        return llvm::Constant::getIntegerValue(type, llvm::APInt(type->getIntegerBitWidth(), val));
+    }
+    else if(type->isPointerTy())
+    {
+        auto ptype = llvm::dyn_cast<llvm::PointerType>(type);
+        auto etype = ptype->getPointerElementType();
+        if(sym->forwarding != "")
+        {
+            if(etype->isFunctionTy())
+            {
+                auto ftype = llvm::dyn_cast<llvm::FunctionType>(etype);
+                LLVM_Module->getOrInsertFunction(sym->forwarding, ftype->getReturnType());
+                return LLVM_Module->getFunction(sym->forwarding);
+                // return llvm::Constant::getNullValue(ptype);
+            }
+            else
+            {
+                std::cout << "Forwarding to " << sym->forwarding << std::endl;
+                auto g = LLVM_Module->getOrInsertGlobal(sym->forwarding, etype);
+                auto var = LLVM_Module->getGlobalVariable(sym->forwarding);
+                // auto var = llvm::dyn_cast<llvm::GlobalVariable>(g);
+                // var->setLinkage(llvm::GlobalValue::ExternalLinkage);
+                if (var->getValueType() != etype)
+                {
+                    return llvm::dyn_cast<llvm::Constant>(IRBuilder->CreateBitOrPointerCast(var, etype->getPointerTo()));
+                }
+                return var;
+                // return llvm::Constant::getNullValue(ptype);
+            }
+        }
+    }
+    else if(type->isArrayTy())
+    {
+        auto atype = llvm::dyn_cast<llvm::ArrayType>(type);
+        if(sym->encoding != "")
+        {
+            std::string str = std::string(sym->content.begin(), sym->content.end() - 1);
+            return llvm::ConstantDataArray::getString(*LLVM_Context, str);
+        }
+        else
+        {
+            return llvm::Constant::getNullValue(type);
+        }
+    }
+    return llvm::Constant::getNullValue(type);
 }
 llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
 {
@@ -2436,33 +2473,72 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
     {
         res = (*iter).second;
     }
-    else if(space_name == "const")
+    else if(space_name == "const" || space_name == "unique")
     {
-        if(ltype->isPointerTy())
+        auto gsym = getGlobalSym(vn);
+        if(ltype->isPointerTy() || gsym)
         {
-            if(vn->getAddr().getOffset() != 0)
+            llvm::Constant *val;
+            llvm::GlobalVariable *var;
+            if(gsym)
             {
-                // std::stringstream gid;
-                // gid << "global_" << std::hex << vn->getAddr().getOffset();
-                // auto ptype = translateType(dynamic_cast<TypePointer
-                // *>(vn->getType())->getPtrTo());
-                auto gsym = getGlobalSym(vn);
-                // auto arrayType = llvm::ArrayType::get(ltype, content.size());
-                // res = LLVM_Module->getOrInsertGlobal(gid.str(), arrayType);
-                // auto var = LLVM_Module->getNamedGlobal(gid.str());
-                std::string str(gsym->content.begin(), gsym->content.end() - 1);
-                std::cout << "Found string constant " << str << std::endl;
-                res = IRBuilder->CreateGlobalStringPtr(str, gsym->name);
-                // var->setInitializer(llvm::Constant::getNullValue(ltype));
+                if (gsym->forwarding != "")
+                {
+                    auto func = LLVM_Module->getFunction(gsym->forwarding);
+                    auto data = LLVM_Module->getGlobalVariable(gsym->forwarding);
+                    if (func != nullptr)
+                    {
+                        auto pftype = func->getType();
+                        res = LLVM_Module->getOrInsertGlobal(gsym->name, pftype);
+                        var = LLVM_Module->getNamedGlobal(gsym->name);
+                        val = getInitializer(pftype, gsym);
+                    }
+                    else if(data != nullptr)
+                    {
+                        auto pdtype = data->getType()->getPointerElementType();
+                        res = LLVM_Module->getOrInsertGlobal(gsym->name, pdtype);
+                        var = LLVM_Module->getNamedGlobal(gsym->name);
+                        val = getInitializer(pdtype, gsym);
+                    }
+                    else
+                    {
+                        res = LLVM_Module->getOrInsertGlobal(gsym->name, ltype);
+                        var = LLVM_Module->getNamedGlobal(gsym->name);
+                        val = getInitializer(ltype, gsym);
+                        val = llvm::Constant::getNullValue(ltype);
+                    }
+                }
+                else if(gsym->encoding != "")
+                {
+                    auto arrayType =
+                        llvm::ArrayType::get(llvm::Type::getInt8Ty(*LLVM_Context), gsym->size);
+                    res = LLVM_Module->getOrInsertGlobal(gsym->name, arrayType);
+                    var = LLVM_Module->getNamedGlobal(gsym->name);
+                    val = getInitializer(arrayType, gsym);
+                    std::string str(gsym->content.begin(), gsym->content.end() - 1);
+                    std::cout << "Found string constant " << str << std::endl;
+                }
+                else
+                {
+                    res = LLVM_Module->getOrInsertGlobal(gsym->name, ltype);
+                    var = LLVM_Module->getNamedGlobal(gsym->name);
+                    val = getInitializer(ltype, gsym);
+                    if(val->getType() != ltype)
+                    {
+                        val = llvm::Constant::getNullValue(ltype);
+                    }
+                }
+                var->setInitializer(val);
+                res = var;
             }
             else
             {
-                res = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(ltype));
+                res = llvm::Constant::getNullValue(ltype);
             }
         }
         else
         {
-            res = llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
+            res = llvm::ConstantInt::get(ltype, vn->getOffset());
         }
     }
     else if(space_name == "ram" || space_name == "stack")
@@ -2477,31 +2553,49 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         {
             auto gsym = getGlobalSym(vn);
             llvm::GlobalVariable *var;
-            llvm::Constant *g;
-            llvm::Value *val;
+            llvm::Value *out;
+            llvm::Constant *val;
             if(gsym)
             {
-                std::string str(gsym->content.begin(), gsym->content.end() - 1);
-                g = IRBuilder->CreateGlobalStringPtr(str, gsym->name);
                 var = LLVM_Module->getNamedGlobal(gsym->name);
+                if(var == nullptr)
+                {
+                    if(gsym->encoding != "")
+                    {
+                        auto arrayType =
+                            llvm::ArrayType::get(llvm::Type::getInt8Ty(*LLVM_Context), gsym->size);
+                        res = LLVM_Module->getOrInsertGlobal(gsym->name, arrayType);
+                        var = llvm::dyn_cast<llvm::GlobalVariable>(res);
+                        val = getInitializer(arrayType, gsym);
+                        std::string str(gsym->content.begin(), gsym->content.end() - 1);
+                        std::cout << "Found string constant " << str << std::endl;
+                    }
+                    else
+                    {
+                        res = LLVM_Module->getOrInsertGlobal(gsym->name, ltype);
+                        var = llvm::dyn_cast<llvm::GlobalVariable>(res);
+                        val = getInitializer(ltype, gsym);
+                    }
+                    var->setInitializer(val);
+                }
             }
             else
             {
                 std::stringstream gid;
                 gid << "global_" << std::hex << vn->getAddr().getOffset();
-                g = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
+                res = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
                 var = LLVM_Module->getNamedGlobal(gid.str());
                 var->setInitializer(llvm::Constant::getNullValue(ltype));
             }
-            if(ltype != llvm::dyn_cast<llvm::PointerType>(var->getType())->getElementType())
+            if(ltype != llvm::dyn_cast<llvm::PointerType>(var->getType())->getPointerElementType())
             {
-                val = IRBuilder->CreateBitOrPointerCast(var, ltype->getPointerTo());
+                out = IRBuilder->CreateBitOrPointerCast(var, ltype->getPointerTo());
             }
             else
             {
-                val = var;
+                out = var;
             }
-            res = IRBuilder->CreateLoad(ltype, val);
+            res = IRBuilder->CreateLoad(ltype, out);
         }
     }
     else if(vn->isInput())
@@ -2769,6 +2863,7 @@ void PrintLLVM::buildOpReturn(const PcodeOp *op)
     else
     {
         auto ret = getVarnodeValue(op->getIn(0));
+        ret = IRBuilder->CreateBitOrPointerCast(ret, rtype);
         IRBuilder->CreateRet(ret);
     }
 }
@@ -3206,16 +3301,7 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
         std::cout << std::endl;
         if(loc_type->getPointerElementType()->isArrayTy())
         {
-            auto arrayType = llvm::dyn_cast<llvm::PointerType>(loc_type)->getElementType();
-            // auto elementType = llvm::dyn_cast<llvm::ArrayType>(arrayType)->getElementType();
-            // auto ptoType = otype->getPointerElementType();
-            // std::cout << "ArrayElementType " << std::endl;
-            // elementType->print(llvm::outs());
-            // std::cout << std::endl;
-            // std::cout << "PointerElementType " << std::endl;
-            // ptoType->print(llvm::outs());
-            // std::cout << std::endl;
-            // out = IRBuilder->CreateLoad(loc_type->getPointerElementType(), out);
+            auto arrayType = llvm::dyn_cast<llvm::PointerType>(loc_type)->getPointerElementType();
             std::vector<llvm::Value *> Indices = {
                 llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0),
                 llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0)};

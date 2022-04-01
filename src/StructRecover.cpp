@@ -1,25 +1,4 @@
-//===- FunInfer.cpp ---------------------------------------*- C++ -*-===//
-//
-//  Copyright (C) 2020 GrammaTech, Inc.
-//
-//  This code is licensed under the GNU Affero General Public License
-//  as published by the Free Software Foundation, either version 3 of
-//  the License, or (at your option) any later version. See the
-//  LICENSE.txt file in the project root for license terms or visit
-//  https://www.gnu.org/licenses/agpl.txt.
-//
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-//  GNU Affero General Public License for more details.
-//
-//  This project is sponsored by the Office of Naval Research, One Liberty
-//  Center, 875 N. Randolph Street, Arlington, VA 22203 under contract #
-//  N68335-17-C-0700.  The content of the information does not necessarily
-//  reflect the position or policy of the Government and no official
-//  endorsement should be inferred.
-//
-//===----------------------------------------------------------------------===//
+#include <algorithm>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
@@ -349,7 +328,8 @@ std::map<std::string, std::string> FuncProtoMap = {
     {"malloc", "extern void *malloc(size_t size);"},
     {"printf", "extern int printf(char * format, ...);"},
     {"__cxa_finalize", "extern void __cxa_finalize(void * d);"},
-    {"_Znwm", "extern void * _Znwm(size_t size);"}};
+    {"_Znwm", "extern void * _Znwm(size_t size);"},
+    {"puts", "extern int puts(char * str);"}};
 
 namespace facts
 {
@@ -646,12 +626,14 @@ int main(int argc, char **argv)
             std::cout << "Error: " << e.explain << std::endl;
             return 1;
         }
+        auto print_llvm = dynamic_cast<PrintLLVM *>(arch.print);
+        auto string_manager = arch.stringManager;
+        auto type_factory = arch.types;
+        auto glb_scope = arch.symboltab->getGlobalScope();
         auto *FunctionEntries = Module->getAuxData<gtirb::schema::FunctionEntries>();
         auto *FunctionBlocks = Module->getAuxData<gtirb::schema::FunctionBlocks>();
         auto *FunctionNames = Module->getAuxData<gtirb::schema::FunctionNames>();
         auto *SymbolForwardings = Module->getAuxData<gtirb::schema::SymbolForwarding>();
-        auto *SymbolicExpressionSizes =
-            Module->getAuxData<gtirb::schema::SymbolicExpressionSizes>();
         auto *ElfSymbolInfo = Module->getAuxData<gtirb::schema::ElfSymbolInfo>();
         auto *DynamicEntries = Module->getAuxData<gtirb::schema::DynamicEntries>();
         auto *Relocations = Module->getAuxData<gtirb::schema::Relocations>();
@@ -659,14 +641,51 @@ int main(int argc, char **argv)
         auto *SouffleOutputs = Module->getAuxData<gtirb::schema::SouffleOutputs>();
         auto *SouffleFacts = Module->getAuxData<gtirb::schema::SouffleFacts>();
         auto *SymbolicOperand = facts::loadFacts(SouffleOutputs, "symbolic_operand");
-        SymbolicOperand->print(std::cout);
         auto *OperandAttribute = facts::loadFacts(SouffleOutputs, "symbolic_operand_attribute");
-        OperandAttribute->print(std::cout);
         auto *String = facts::loadFacts(SouffleOutputs, "string");
         String->print(std::cout);
         std::map<uint64_t, std::string> SymbolForwardingsMap;
         std::map<uint64_t, std::string> InternalFunc;
+        std::map<uint64_t, std::string> GlobalDataSymbolMap;
+        std::map<uint64_t, std::set<uint64_t>> SymbolUsePointMap;
+        std::map<uint64_t, std::string> OperandAttrMap;
         std::set<std::string> ExternalFunc;
+        std::set<uint64_t> DataSymbolCandidateSet;
+        std::set<uint64_t> DataSymbolSet;
+        std::set<uint64_t> CodeSymbolSet;
+        OperandAttribute->print(std::cout);
+        for(auto &tuple : OperandAttribute->tuples)
+        {
+            auto sym_addr = dynamic_cast<facts::UnsignedElement *>(tuple[0])->u;
+            auto attr = dynamic_cast<facts::StringElement *>(tuple[2])->str;
+            OperandAttrMap.insert(std::make_pair(sym_addr, attr));
+        }
+        SymbolicOperand->print(std::cout);
+        for(auto &tuple : SymbolicOperand->tuples)
+        {
+            auto sym_addr = dynamic_cast<facts::UnsignedElement *>(tuple[2])->u;
+            auto use_point = dynamic_cast<facts::UnsignedElement *>(tuple[0])->u;
+            auto type = dynamic_cast<facts::StringElement *>(tuple[3])->str;
+            SymbolUsePointMap[sym_addr].insert(use_point);
+            if(type == "code")
+            {
+                CodeSymbolSet.insert(sym_addr);
+            }
+            else if(type == "data")
+            {
+                if(OperandAttrMap.count(use_point) == 0)
+                {
+                    DataSymbolCandidateSet.insert(sym_addr);
+                }
+                // else
+                // {
+                //     CodeSymbolSet.insert(sym_addr);
+                // }
+            }
+        }
+        std::set_difference(DataSymbolCandidateSet.begin(), DataSymbolCandidateSet.end(),
+                            CodeSymbolSet.begin(), CodeSymbolSet.end(),
+                            std::inserter(DataSymbolSet, DataSymbolSet.begin()));
         std::cout << "Listing SymbolForwardings" << std::endl;
         for(const auto &[SymUUID0, SymUUID1] : *SymbolForwardings)
         {
@@ -689,10 +708,18 @@ int main(int argc, char **argv)
             {
                 auto Addr = static_cast<uint64_t>(SymName->getAddress().value());
                 std::cout << SymName->getAddress().value() << "==>" << SymName->getName() << " -> ";
-                if(std::get<1>(SymbolInfo) == "FUNC" && SymbolForwardingsMap.count(Addr) == 0)
+                if(SymbolForwardingsMap.count(Addr) == 0 && std::get<1>(SymbolInfo) == "FUNC")
                 {
                     InternalFunc.insert(std::make_pair(Addr, SymName->getName()));
                 }
+                else if(DataSymbolSet.count(Addr) != 0)
+                {
+                    GlobalDataSymbolMap.insert(std::make_pair(Addr, SymName->getName()));
+                }
+                // else if(DataSymbolSet.count(Addr) != 0)
+                // {
+                //     GlobalDataSymbolMap.insert(std::make_pair(Addr, SymbolForwardingsMap[Addr]));
+                // }
                 print(SymbolInfo);
             }
             else
@@ -704,15 +731,6 @@ int main(int argc, char **argv)
                 }
                 print(SymbolInfo);
             }
-        }
-        std::cout << "-----------------------" << std::endl;
-        std::cout << "Listing SymbolicExpressionSizes" << std::endl;
-        for(const auto &[Offset, SymSize] : *SymbolicExpressionSizes)
-        {
-            auto ByteIntervalNode = gtirb::Node::getByUUID(Context, Offset.ElementId);
-            auto ByteInterval = dyn_cast_or_null<gtirb::ByteInterval>(ByteIntervalNode);
-            auto Addr = ByteInterval->getAddress().value() + Offset.Displacement;
-            std::cout << Addr << "==>" << SymSize << std::endl;
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Listing DynamicEntries" << std::endl;
@@ -735,10 +753,34 @@ int main(int argc, char **argv)
         {
             auto DataBlockNode = gtirb::Node::getByUUID(Context, UUID);
             auto DataBlock = dyn_cast_or_null<gtirb::DataBlock>(DataBlockNode);
-            std::cout << DataBlock->getAddress() << "==>" << DataBlock->getSize() << " " << Encoding
-                      << std::endl;
-            // arch.symboltab->getGlobalScope()->addSymbol(DataBlock->getAddress().value(),
-            //                                             DataBlock->getSize(), Encoding);
+            auto Addr = static_cast<uint64_t>(DataBlock->getAddress().value());
+            std::cout << DataBlock->getAddress() << "==>" << DataBlock->getSize() << " "
+                      << Encoding;
+            std::string s(DataBlock->bytes_begin<char>(), DataBlock->bytes_end<char>());
+            std::cout << " " << s << std::endl;
+            // std::stringstream gid;
+            // gid << "global_" << std::hex << Addr;
+            // auto name = gid.str();
+            // auto diter = GlobalDataSymbolMap.find(Addr);
+            // if (diter != GlobalDataSymbolMap.end())
+            // {
+            //     name = diter->second;
+            // }
+            // auto basic_type = type_factory->getBase(1, type_metatype::TYPE_INT);
+            // auto array_type = type_factory->getTypeArray(DataBlock->getSize(), basic_type);
+            // auto sym = glb_scope->addSymbol(name, array_type);
+            // auto code_space = arch.getDefaultCodeSpace();
+            // auto data_space = arch.getDefaultDataSpace();
+            // auto iter = SymbolUsePointMap.find(Addr);
+            // if (iter != SymbolUsePointMap.end())
+            // {
+            //     auto SymAddr = Address(data_space, Addr);
+            //     for (auto use_point: iter->second)
+            //     {
+            //         auto SymUsePoint = Address(code_space, use_point);
+            //         glb_scope->addMapPoint(sym, SymAddr, SymUsePoint);
+            //     }
+            // }
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Listing FunctionEntries" << std::endl;
@@ -767,31 +809,32 @@ int main(int argc, char **argv)
                 auto iter = SymbolForwardingsMap.find(Addr);
                 auto Name =
                     iter == SymbolForwardingsMap.end() ? FunctionName->getName() : iter->second;
-                arch.symboltab->getGlobalScope()->addFunction(
-                    Address(arch.getDefaultCodeSpace(), Addr), Name);
+                glb_scope->addFunction(Address(arch.getDefaultCodeSpace(), Addr), Name);
                 FunctionEntryAddresses.push_back(Addr);
             }
-            // auto It = FunctionBlocks->find(FunctionUUID);
-            // assert(It != FunctionBlocks->end());
-            // auto &Blocks = It->second;
-            // for(auto BlockUUID : Blocks)
-            // {
-            //     auto BlockNode = gtirb::Node::getByUUID(Context, BlockUUID);
-            //     assert(BlockNode);
-            //     auto Block = dyn_cast_or_null<gtirb::CodeBlock>(BlockNode);
-            //     assert(Block);
-            //     std::cout << "    " << Block->getAddress() << std::endl;
-            //     uint64_t Addr = static_cast<uint64_t>(*(Block->getAddress()));
-            //     uint64_t Size = Block->getSize();
-            //     try {
-            // dumpPcode(arch.translate, Addr, Size);
-            // dumpAssembly(arch.translate, Addr, Size);
-            //     }
-            //     catch (LowlevelError e) {
-            //         std::cout << e.explain << std::endl;
-            //         return -1;
-            //     }
-            // }
+        }
+        for(auto &[Addr, Name] : GlobalDataSymbolMap)
+        {
+            auto biter = Module->findDataBlocksAt(gtirb::Addr(Addr));
+            if(biter.empty())
+            {
+                continue;
+            }
+            auto &Datablock = biter.front();
+            auto size = Datablock.getSize();
+            auto iter = SymbolUsePointMap.find(Addr);
+            auto content = std::vector<uint8_t>(Datablock.bytes_begin<uint8_t>(),
+                                                Datablock.bytes_end<uint8_t>());
+            if(iter != SymbolUsePointMap.end())
+            {
+                for(auto use_point : iter->second)
+                {
+                    print_llvm->setSym(use_point, Name, Addr, size, content);
+                    std::cout << "Inserting UsePoint: " << std::hex << Addr << " at " << std::hex
+                              << use_point << " of size " << std::hex << size << " : "
+                              << std::string(content.begin(), content.end()) << std::endl;
+                }
+            }
         }
         std::cout << "-----------------------" << std::endl;
         std::cout << "Lifting Functions" << std::endl;
@@ -828,7 +871,7 @@ int main(int argc, char **argv)
             {
                 if(demangler.partialDemangle(Name.c_str()))
                 {
-                    std::cout << "    "  << Name << " not demangled" << std::endl;
+                    std::cout << "    " << Name << " not demangled" << std::endl;
                 }
                 else
                 {
@@ -845,15 +888,14 @@ int main(int argc, char **argv)
                     std::string FunctionParameters(result, result + strlen(result));
                     s << FunctionParameters;
                     free(result);
-                    std::cout << "    "  << Name << "==>" << s.str() << std::endl;
+                    std::cout << "    " << Name << "==>" << s.str() << std::endl;
                 }
             }
         }
         for(auto &[Addr, Name] : InternalFunc)
         {
             std::cout << "Lifting " << Name << " at " << Addr << std::endl;
-            Funcdata *func = arch.symboltab->getGlobalScope()->findFunction(
-                Address(arch.getDefaultCodeSpace(), Addr));
+            Funcdata *func = glb_scope->findFunction(Address(arch.getDefaultCodeSpace(), Addr));
             if(!func)
             {
                 std::cout << "Function not found\n";
@@ -861,13 +903,10 @@ int main(int argc, char **argv)
             }
             std::cout << func->getName() << std::endl;
             auto action = arch.allacts.getCurrent();
-            // action->setBreakPoint(Action::breakflags::break_start, "mergerequired");
             action->reset(*func);
-            // func->printRaw(std::cout);
             auto res = action->perform(*func);
             func->printRaw(std::cout);
             AssemblyRaw assememit;
-
             for(auto &fb : func->getBasicBlocks().getList())
             {
                 auto bb = dynamic_cast<BlockBasic *>(fb);
@@ -876,19 +915,19 @@ int main(int argc, char **argv)
                     dump(*op);
                 }
             }
-            // for (auto op = func->beginOpAll(); op != func->endOpAll(); ++op) {
-            //     std::cout << "--- ";
-            //     arch.translate->printAssembly(assememit,op->first.getAddr());
-            //     dump(op->second);
-            // }
-            dynamic_cast<PrintLLVM *>(arch.print)->buildFunction(func);
-            // arch.print->docFunction(func);
+            arch.print->docFunction(func);
             std::cout << "---" << std::endl;
         }
-        dynamic_cast<PrintLLVM *>(arch.print)->dumpLLVM(BinaryPath + ".ll");
-        dynamic_cast<PrintLLVM *>(arch.print)->dumpLLVM("-");
+        for(auto &[Addr, Name] : InternalFunc)
+        {
+            Funcdata *func = glb_scope->findFunction(Address(arch.getDefaultCodeSpace(), Addr));
+            print_llvm->buildFunction(func);
+        }
+        std::cout << "-----------------------" << std::endl;
+        print_llvm->dumpLLVM(BinaryPath + ".ll");
+        print_llvm->dumpLLVM("-");
         arch.shutdown();
-        // arch.print->docAllGlobals();
+        print_llvm->docAllGlobals();
     }
 
     return 0;

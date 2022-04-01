@@ -144,8 +144,23 @@ protected:
     std::map<const BlockBasic *, llvm::BasicBlock *> LLVM_BlockMap;
     std::map<const Address, llvm::Value *> LLVM_LocVarMap;
     std::map<const Funcdata *, std::map<const Address, llvm::Value *>> LLVM_FuncArgMap;
+    struct GlobalSym
+    {
+        std::string name;
+        uint64_t addr;
+        uint64_t size;
+        std::vector<uint8_t> content;
+        GlobalSym(const string &n, uint64_t a, uint64_t s, std::vector<uint8_t> &c)
+            : name(n), addr(a), size(s), content(c)
+        {
+        }
+    };
+    std::map<const uint64_t, GlobalSym *> SymUseMap;
+    std::map<const uint64_t, GlobalSym *> SymMap;
+
     std::set<const PcodeOp *> PhiOps;
-    const Funcdata *curfunc;       ///< The current function being processed
+    const Funcdata *curfunc; ///< The current function being processed
+    const PcodeOp *curop;    ///< The current operation being processed
 
     // Routines that are specific to C/C++
     void buildTypeStack(const Datatype *ct,
@@ -339,6 +354,25 @@ public:
     virtual void emitBlockInfLoop(const BlockInfLoop *bl);
     virtual void emitBlockSwitch(const BlockSwitch *bl);
 
+    void setSym(uint64_t use_point, std::string name, uint64_t addr, uint64_t size,
+                std::vector<uint8_t> c)
+    {
+        auto iter = SymMap.find(addr);
+        if(iter != SymMap.end())
+        {
+            SymUseMap.insert(std::make_pair(use_point, iter->second));
+        }
+        else
+        {
+            auto sym = new GlobalSym(name, addr, size, c);
+            SymUseMap.insert(std::make_pair(use_point, sym));
+            SymMap.insert(std::make_pair(addr, sym));
+        }
+        std::cout << "Inserting UsePoint: " << std::hex << addr << " at " << std::hex << use_point
+                  << " of size " << std::hex << size << " : " << std::string(c.begin(), c.end())
+                  << std::endl;
+    }
+    GlobalSym *getGlobalSym(const Varnode *vn);
     llvm::Value *getVarnodeValue(const Varnode *vn);
     llvm::FunctionType *getCallType(const PcodeOp *op);
     void buildOpCopy(const PcodeOp *op);

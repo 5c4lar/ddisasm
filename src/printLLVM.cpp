@@ -2365,7 +2365,60 @@ void PrintLLVM::emitLocalVarDecls(const Funcdata *fd)
     if(notempty)
         emit->tagLine();
 }
+PrintLLVM::GlobalSym *PrintLLVM::getGlobalSym(const Varnode *vn)
 
+{
+    AddrSpace *spc = glb->getDefaultDataSpace();
+    auto val = vn->getOffset();
+    std::cout << "Looking up at " << val << std::endl;
+    auto iter = SymMap.find(val);
+    if(iter != SymMap.end())
+    {
+        std::cout << "Found symbol " << iter->second->name << std::endl;
+        return iter->second;
+    }
+    else
+    {
+        std::cout << "Not found" << std::endl;
+        return nullptr;
+    }
+    // auto ct = dynamic_cast<TypePointer *>(vn->getType());
+    // auto scope = glb->getDefaultDataSpace();
+
+    // auto iter = SymUseMap.find(curop->getAddr().getOffset());
+    // std::cout << "Looking up at " << curop->getAddr().getOffset() << std::endl;
+    // auto val_addr = Address(glb->getDefaultDataSpace(), val);
+    // if (iter != SymUseMap.end())
+    // {
+    //     auto glb_sym = iter->second;
+    //     return glb_sym->content;
+    // if (glb_sym->addr == vn->getOffset())
+    // {
+
+    // std::vector<uint1> str_buf(glb_sym->size);
+    // glb->loader->loadFill(str_buf.data(), glb_sym->size, val_addr);
+    // return str_buf;
+    // }
+    // }
+    // auto use_point = Address(glb->getDefaultCodeSpace(), curop->getAddr().getOffset());
+    // auto sym = glb->symboltab->getGlobalScope()->findContainer(val_addr, 1, use_point);
+    // auto size = sym->getSize();
+    // uintb fullEncoding;
+    // Address stringaddr = glb->resolveConstant(spc, val, ct->getSize(), use_point, fullEncoding);
+    // if(stringaddr.isInvalid())
+    //     return std::string();
+    // if(!glb->symboltab->getGlobalScope()->isReadOnly(stringaddr, 1, Address()))
+    //     return std::string(); // Check that string location is readonly
+
+    // ostringstream str;
+    // Datatype *subct = ct->getPtrTo();
+    // StringManager *manager = glb->stringManager;
+
+    // Retrieve UTF8 version of string
+    // bool isTrunc = false;
+    // const vector<uint1> &buffer(manager->getStringData(stringaddr, subct, isTrunc));
+    // return std::string(buffer.data(), buffer.data() + buffer.size());
+}
 llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
 {
     std::cout << "Processing varnode " << std::endl;
@@ -2389,11 +2442,18 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         {
             if(vn->getAddr().getOffset() != 0)
             {
-                std::stringstream gid;
-                gid << "global_" << std::hex << vn->getAddr().getOffset();
-                ltype = translateType(dynamic_cast<TypePointer *>(vn->getType())->getPtrTo());
-                res = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
-                LLVM_ValueMap.insert(std::make_pair(vn, res));
+                // std::stringstream gid;
+                // gid << "global_" << std::hex << vn->getAddr().getOffset();
+                // auto ptype = translateType(dynamic_cast<TypePointer
+                // *>(vn->getType())->getPtrTo());
+                auto gsym = getGlobalSym(vn);
+                // auto arrayType = llvm::ArrayType::get(ltype, content.size());
+                // res = LLVM_Module->getOrInsertGlobal(gid.str(), arrayType);
+                // auto var = LLVM_Module->getNamedGlobal(gid.str());
+                std::string str(gsym->content.begin(), gsym->content.end() - 1);
+                std::cout << "Found string constant " << str << std::endl;
+                res = IRBuilder->CreateGlobalStringPtr(str, gsym->name);
+                // var->setInitializer(llvm::Constant::getNullValue(ltype));
             }
             else
             {
@@ -2404,7 +2464,6 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         {
             res = llvm::ConstantInt::get(translateType(vn->getType()), vn->getOffset());
         }
-        LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
     else if(space_name == "ram" || space_name == "stack")
     {
@@ -2416,11 +2475,33 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         }
         else
         {
-            std::stringstream gid;
-            gid << "global_" << std::hex << vn->getAddr().getOffset();
-            auto g = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
-            res = IRBuilder->CreateLoad(ltype, g);
-            LLVM_ValueMap.insert(std::make_pair(vn, res));
+            auto gsym = getGlobalSym(vn);
+            llvm::GlobalVariable *var;
+            llvm::Constant *g;
+            llvm::Value *val;
+            if(gsym)
+            {
+                std::string str(gsym->content.begin(), gsym->content.end() - 1);
+                g = IRBuilder->CreateGlobalStringPtr(str, gsym->name);
+                var = LLVM_Module->getNamedGlobal(gsym->name);
+            }
+            else
+            {
+                std::stringstream gid;
+                gid << "global_" << std::hex << vn->getAddr().getOffset();
+                g = LLVM_Module->getOrInsertGlobal(gid.str(), ltype);
+                var = LLVM_Module->getNamedGlobal(gid.str());
+                var->setInitializer(llvm::Constant::getNullValue(ltype));
+            }
+            if(ltype != llvm::dyn_cast<llvm::PointerType>(var->getType())->getElementType())
+            {
+                val = IRBuilder->CreateBitOrPointerCast(var, ltype->getPointerTo());
+            }
+            else
+            {
+                val = var;
+            }
+            res = IRBuilder->CreateLoad(ltype, val);
         }
     }
     else if(vn->isInput())
@@ -2447,7 +2528,6 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
             {
                 res = llvm::Constant::getNullValue(ltype);
             }
-            LLVM_ValueMap.insert(std::make_pair(vn, res));
         }
     }
     else
@@ -2460,16 +2540,12 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
         {
             res = llvm::Constant::getNullValue(ltype);
         }
-        LLVM_ValueMap.insert(std::make_pair(vn, res));
     }
-    // if(res->getType() != ltype)
-    // {
-    //     if(ltype->isIntegerTy() && res->getType()->isIntegerTy())
-    //     {
-    //         res = IRBuilder->CreateIntCast(res, ltype, false);
-    //         LLVM_ValueMap.insert(std::make_pair(vn, res));
-    //     }
-    // }
+    if(res->getType() != ltype)
+    {
+        res = IRBuilder->CreateBitOrPointerCast(res, ltype);
+    }
+    LLVM_ValueMap.insert(std::make_pair(vn, res));
     res->getType()->print(llvm::outs());
     std::cout << std::endl;
     return res;
@@ -2484,6 +2560,8 @@ llvm::FunctionType *PrintLLVM::getCallType(const PcodeOp *op)
     std::vector<llvm::Type *> InputTypes;
     if(op->getOut())
     {
+        // auto out = getVarnodeValue(op->getOut());
+        // OutputType = out->getType();
         OutputType = translateType(op->getOut()->getType());
     }
     else
@@ -2493,7 +2571,9 @@ llvm::FunctionType *PrintLLVM::getCallType(const PcodeOp *op)
     for(int i = 1; i <= op->numInput() - 1; ++i)
     {
         const Varnode *in = op->getIn(i);
-        InputTypes.push_back(translateType(in->getType()));
+        auto inval = getVarnodeValue(in);
+        InputTypes.push_back(inval->getType());
+        // InputTypes.push_back(translateType(in->getType()));
     }
     return llvm::FunctionType::get(OutputType, InputTypes, false);
 }
@@ -2580,7 +2660,6 @@ void PrintLLVM::buildOpCall(const PcodeOp *op)
         if(iter == LLVM_FunctionMap.end())
         {
             FuncValue = buildFunctionDeclaration(fd);
-            LLVM_FunctionMap.insert(std::make_pair(fd, llvm::dyn_cast<llvm::Function>(FuncValue)));
         }
         else
         {
@@ -2636,6 +2715,7 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
     FuncValue->print(llvm::outs());
     llvm::Type *OutputType;
     std::vector<llvm::Type *> InputTypes;
+    std::vector<llvm::Value *> args;
     if(op->getOut())
     {
         OutputType = translateType(op->getOut()->getType());
@@ -2647,7 +2727,9 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
     for(int i = 1; i <= op->numInput() - 1; ++i)
     {
         const Varnode *in = op->getIn(i);
-        InputTypes.push_back(translateType(in->getType()));
+        auto inval = getVarnodeValue(in);
+        args.push_back(inval);
+        InputTypes.push_back(inval->getType());
     }
     auto *FuncType = llvm::FunctionType::get(OutputType, InputTypes, false);
     std::cout << std::endl;
@@ -2662,24 +2744,10 @@ void PrintLLVM::buildOpCallind(const PcodeOp *op)
     {
         std::cout << "Cast failed" << std::endl;
     }
-    if(FuncValue && FuncType)
+    if(FuncValue)
     {
         FuncType->print(llvm::outs());
-        auto count = op->numInput() - 1;
-        if(count > 0)
-        {
-            std::vector<llvm::Value *> args;
-            for(int i = 1; i <= count; ++i)
-            {
-                const Varnode *vn = op->getIn(i);
-                args.push_back(getVarnodeValue(vn));
-            }
-            out = IRBuilder->CreateCall(FuncType, FuncValue, args);
-        }
-        else
-        {
-            out = IRBuilder->CreateCall(FuncType, FuncValue);
-        }
+        out = IRBuilder->CreateCall(FuncType, FuncValue, args);
         if(op->getOut() != (Varnode *)0)
         {
             const Varnode *vn = op->getOut();
@@ -3125,7 +3193,7 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
     auto iterGlb = LLVM_LocVarMap.find(AddrDataGlb);
     auto otype = translateType(dynamic_cast<TypePointer *>(vn->getType())->getPtrTo());
     llvm::Value *out;
-    // auto fc = glb->getDefaultCodeSpace()
+    auto fd = glb->symboltab->getGlobalScope()->findFunction(AddrCodeGlb);
     if(iterLoc != LLVM_LocVarMap.end())
     {
         std::cout << "Found local in LocVarMap" << std::endl;
@@ -3136,7 +3204,7 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
         auto loc_type = out->getType();
         loc_type->print(llvm::outs());
         std::cout << std::endl;
-        if (loc_type->getPointerElementType()->isArrayTy())
+        if(loc_type->getPointerElementType()->isArrayTy())
         {
             auto arrayType = llvm::dyn_cast<llvm::PointerType>(loc_type)->getElementType();
             // auto elementType = llvm::dyn_cast<llvm::ArrayType>(arrayType)->getElementType();
@@ -3148,7 +3216,9 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
             // ptoType->print(llvm::outs());
             // std::cout << std::endl;
             // out = IRBuilder->CreateLoad(loc_type->getPointerElementType(), out);
-            std::vector <llvm::Value *> Indices = {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0), llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0)};
+            std::vector<llvm::Value *> Indices = {
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(*LLVM_Context), 0)};
             out = IRBuilder->CreateGEP(arrayType, out, Indices);
         }
         LLVM_ValueMap.insert(std::make_pair(vn, out));
@@ -3157,22 +3227,27 @@ void PrintLLVM::buildOpPtrsub(const PcodeOp *op)
     else if(iterGlb != LLVM_LocVarMap.end())
     {
         std::cout << "Found global in LocVarMap" << std::endl;
-        rhs = iterGlb->second;
-        LLVM_ValueMap.insert(std::make_pair(vn, rhs));
+        out = iterGlb->second;
+        LLVM_ValueMap.insert(std::make_pair(vn, out));
         return;
     }
-    // else if(fc)
-    // {
-    //     auto fd = fc->getFuncdata();
-    //     auto iterFunc = LLVM_FunctionMap.find(fd);
-    //     if(iterFunc != LLVM_FunctionMap.end())
-    //     {
-    //         std::cout << "Found in FunctionMap" << std::endl;
-    //         rhs = iterFunc->second;
-    //         LLVM_ValueMap.insert(std::make_pair(vn, rhs));
-    //         return;
-    //     }
-    // }
+    else if(fd)
+    {
+        std::cout << "Found function in Symtable" << std::endl;
+        auto iterFunc = LLVM_FunctionMap.find(fd);
+        if(iterFunc != LLVM_FunctionMap.end())
+        {
+            std::cout << "Found in FunctionMap" << std::endl;
+            out = iterFunc->second;
+        }
+        else
+        {
+            std::cout << "Declaring function " << fd->getName() << std::endl;
+            out = buildFunctionDeclaration(fd);
+        }
+        LLVM_ValueMap.insert(std::make_pair(vn, out));
+        return;
+    }
     auto lhs_val = IRBuilder->CreatePtrToInt(lhs, rhs->getType());
     auto res = IRBuilder->CreateAdd(lhs_val, rhs);
     out = IRBuilder->CreateIntToPtr(res, translateType(vn->getType()));
@@ -3203,6 +3278,7 @@ void PrintLLVM::buildInst(const PcodeOp *inst)
               << inst->getSeqNum() << std::endl;
     inst->printRaw(std::cout);
     std::cout << std::endl;
+    curop = inst;
     switch(inst->getOpcode()->getOpcode())
     {
         case CPUI_COPY:
@@ -3646,7 +3722,8 @@ void PrintLLVM::buildVarDecl(const Symbol *sym)
 
 {
     auto Addr = sym->getFirstWholeMap()->getAddr();
-    if(Addr.getSpace()->getName() == "stack")
+    auto space = Addr.getSpace();
+    if(space && space->getName() == "stack")
     {
         std::cout << "Processing symbol " << sym->getName() << std::endl;
         Addr.printRaw(std::cout);

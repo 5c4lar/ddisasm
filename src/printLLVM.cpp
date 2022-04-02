@@ -2430,11 +2430,10 @@ llvm::Constant *PrintLLVM::getInitializer(llvm::Type *type, GlobalSym *sym)
                 std::cout << "Forwarding to " << sym->forwarding << std::endl;
                 auto g = LLVM_Module->getOrInsertGlobal(sym->forwarding, etype);
                 auto var = LLVM_Module->getGlobalVariable(sym->forwarding);
-                // auto var = llvm::dyn_cast<llvm::GlobalVariable>(g);
-                // var->setLinkage(llvm::GlobalValue::ExternalLinkage);
-                if (var->getValueType() != etype)
+                if(var->getValueType() != etype)
                 {
-                    return llvm::dyn_cast<llvm::Constant>(IRBuilder->CreateBitOrPointerCast(var, etype->getPointerTo()));
+                    return llvm::dyn_cast<llvm::Constant>(
+                        IRBuilder->CreateBitOrPointerCast(var, etype->getPointerTo()));
                 }
                 return var;
                 // return llvm::Constant::getNullValue(ptype);
@@ -2482,11 +2481,11 @@ llvm::Value *PrintLLVM::getVarnodeValue(const Varnode *vn)
             llvm::GlobalVariable *var;
             if(gsym)
             {
-                if (gsym->forwarding != "")
+                if(gsym->forwarding != "")
                 {
                     auto func = LLVM_Module->getFunction(gsym->forwarding);
                     auto data = LLVM_Module->getGlobalVariable(gsym->forwarding);
-                    if (func != nullptr)
+                    if(func != nullptr)
                     {
                         auto pftype = func->getType();
                         res = LLVM_Module->getOrInsertGlobal(gsym->name, pftype);

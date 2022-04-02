@@ -667,14 +667,10 @@ int main(int argc, char **argv)
             }
             else if(type == "data")
             {
-                if(OperandAttrMap.count(use_point) == 0 || OperandAttrMap[use_point] != "PltRef")
+                if(OperandAttrMap.count(use_point) == 0)
                 {
                     DataSymbolCandidateSet.insert(sym_addr);
                 }
-                // else
-                // {
-                //     CodeSymbolSet.insert(sym_addr);
-                // }
             }
         }
         std::set_difference(DataSymbolCandidateSet.begin(), DataSymbolCandidateSet.end(),
@@ -697,20 +693,21 @@ int main(int argc, char **argv)
         {
             auto sym_addr = dynamic_cast<facts::UnsignedElement *>(tuple[0])->u;
             auto expr = dynamic_cast<facts::StringElement *>(tuple[2])->str;
-            if (expr.rfind("FUN_", 0) == 0) { // pos=0 limits the search to the prefix
+            if(expr.rfind("FUN_", 0) == 0)
+            { // pos=0 limits the search to the prefix
                 auto num = std::stoull(expr.substr(4, expr.size() - 4));
                 std::stringstream s;
-                s << "FUN_" << std::hex <<num;
+                s << "FUN_" << std::hex << num;
                 SymbolForwardingsMap.insert(std::make_pair(sym_addr, s.str()));
             }
-            else if (expr.rfind(".L_") == 0)
+            else if(expr.rfind(".L_") == 0)
             {
                 auto num = std::stoull(expr.substr(3, expr.size() - 3));
                 std::stringstream s;
-                s << ".L_" << std::hex <<num;
+                s << ".L_" << std::hex << num;
                 SymbolForwardingsMap.insert(std::make_pair(sym_addr, s.str()));
             }
-            else if (expr.find("@") != std::string::npos)
+            else if(expr.find("@") != std::string::npos)
             {
                 continue;
             }
@@ -740,7 +737,7 @@ int main(int argc, char **argv)
                 else if(GlobalDataSymbolMap.count(Addr))
                 {
                     auto extern_name = GlobalDataSymbolMap[Addr];
-                    if (std::get<1>(SymbolInfo) != "OBJECT")
+                    if(std::get<1>(SymbolInfo) != "OBJECT")
                     {
                         GlobalDataSymbolMap[Addr] = SymName->getName();
                     }
@@ -748,7 +745,8 @@ int main(int argc, char **argv)
                     {
                         extern_name = SymName->getName();
                     }
-                    SymbolForwardingsMap.insert(std::pair<uint64_t, std::string>(Addr, extern_name));
+                    SymbolForwardingsMap.insert(
+                        std::pair<uint64_t, std::string>(Addr, extern_name));
                 }
                 print(SymbolInfo);
             }
@@ -833,7 +831,8 @@ int main(int argc, char **argv)
             auto iter = SymbolUsePointMap.find(Addr);
             auto content = std::vector<uint8_t>(Datablock.bytes_begin<uint8_t>(),
                                                 Datablock.bytes_end<uint8_t>());
-            auto forwarding = SymbolForwardingsMap.count(Addr) != 0 ? SymbolForwardingsMap[Addr] : "";
+            auto forwarding =
+                SymbolForwardingsMap.count(Addr) != 0 ? SymbolForwardingsMap[Addr] : "";
             auto data = std::string(content.begin(), content.end());
             auto encoding = EncodingMap.count(Addr) != 0 ? EncodingMap[Addr] : "";
             auto unkown_type = type_factory->getBase(1, type_metatype::TYPE_UNKNOWN);

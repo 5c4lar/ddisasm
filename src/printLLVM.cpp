@@ -4170,42 +4170,6 @@ void PrintLLVM::buildBlockBasic(const BlockBasic *bb)
         auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
         IRBuilder->CreateBr(next);
     }
-    // if(bb->sizeOut() == 2)
-    // {
-    // llvm::BasicBlock *btrue;
-    // llvm::BasicBlock *bfalse;
-    // if(inst->isFallthruTrue())
-    // {
-    //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-    //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-    // }
-    // else
-    // {
-    //     btrue = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(1)))->second;
-    //     bfalse = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-    // }
-    // auto dummy_cond = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*LLVM_Context), 1);
-    // IRBuilder->CreateCondBr(dummy_cond, btrue, bfalse);
-    // }
-    // else if(bb->sizeOut() == 1)
-    // {
-    //     auto next = LLVM_BlockMap.find(dynamic_cast<const BlockBasic *>(bb->getOut(0)))->second;
-    //     IRBuilder->CreateBr(next);
-    // }
-    // if(bb->sizeOut() == 0)
-    // {
-    //     auto rtype = translateType(bb->getFuncdata()->getFuncProto().getOutputType());
-    //     llvm::Value *dummy_ret;
-    //     if(rtype->isVoidTy())
-    //     {
-    //         dummy_ret = nullptr;
-    //     }
-    //     else
-    //     {
-    //         dummy_ret = llvm::Constant::getNullValue(rtype);
-    //     }
-    //     IRBuilder->CreateRet(dummy_ret);
-    // }
 }
 
 void PrintLLVM::emitBlockBasic(const BlockBasic *bb)

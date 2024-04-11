@@ -406,6 +406,21 @@ void ElfReader::resurrectSymbols()
         auto Bytes = Elf->get_content_from_virtual_address(Addr, Size);
         auto Iter = Bytes.begin();
 
+        // Extract a string at the given Index in STRTAB
+        auto getStringAt = [&StrTabBytes](uint32_t Index)
+        {
+            std::stringstream SS;
+            auto It = StrTabBytes.begin() + Index;
+            while(It != StrTabBytes.end())
+            {
+                uint8_t V = *It++;
+                if(V == 0)
+                    break;
+                SS << V;
+            }
+            return SS.str();
+        };
+
         for(uint64_t I = 0; I < DynSymNum; ++I)
         {
             // NOTE:
@@ -497,7 +512,8 @@ static bool buildArm32ArchInfo(gtirb::Section *S, std::map<std::string, std::str
         {'S', "System"},
     };
 
-    auto readUleb128 = [](const unsigned char *Ptr, unsigned int *len_out) {
+    auto readUleb128 = [](const unsigned char *Ptr, unsigned int *len_out)
+    {
         uint64_t Ans = 0;
         unsigned int NRead = 0;
         int Shift = 0;
@@ -760,7 +776,8 @@ void ElfReader::buildSections()
     // Add `overlay` aux data table.
     if(auto Overlay = Elf->overlay(); Overlay.size() > 0)
     {
-        Module->addAuxData<gtirb::schema::Overlay>(std::move(Overlay));
+        Module->addAuxData<gtirb::schema::Overlay>(
+            gtirb::schema::Overlay::Type{Overlay.begin(), Overlay.end()});
     }
 
     Module->addAuxData<gtirb::schema::Alignment>(std::move(Alignment));
@@ -957,7 +974,8 @@ void ElfReader::buildSymbols()
         }
     }
 
-    auto LoadSymbols = [&](auto SymbolIt, std::string TableName) {
+    auto LoadSymbols = [&](auto SymbolIt, std::string TableName)
+    {
         uint64_t TableIndex = 0;
         for(auto &Symbol : SymbolIt)
         {
@@ -1063,11 +1081,13 @@ const LIEF::ELF::Section *ElfReader::findRelocationSection(const LIEF::ELF::Relo
     else
     {
         auto Section =
-            std::find_if(Elf->sections().begin(), Elf->sections().end(), [Address](auto &S) {
-                return (Address >= S.virtual_address()
-                        && Address < (S.virtual_address() + S.size()))
-                       && (S.type() != LIEF::ELF::ELF_SECTION_TYPES::SHT_NOBITS);
-            });
+            std::find_if(Elf->sections().begin(), Elf->sections().end(),
+                         [Address](auto &S)
+                         {
+                             return (Address >= S.virtual_address()
+                                     && Address < (S.virtual_address() + S.size()))
+                                    && (S.type() != LIEF::ELF::ELF_SECTION_TYPES::SHT_NOBITS);
+                         });
         if(Section != Elf->sections().end())
             return &(*Section);
         else
@@ -1115,9 +1135,8 @@ std::string ElfReader::inferDynMode()
 
     // Executables should include a `INTERP` segment.
     // If there is no `INTERP` segment, it should be Shared.
-    auto InterpSegment = std::find_if(Elf->segments().begin(), Elf->segments().end(), [](auto &S) {
-        return S.type() == LIEF::ELF::SEGMENT_TYPES::PT_INTERP;
-    });
+    auto InterpSegment = std::find_if(Elf->segments().begin(), Elf->segments().end(), [](auto &S)
+                                      { return S.type() == LIEF::ELF::SEGMENT_TYPES::PT_INTERP; });
     if(InterpSegment == Elf->segments().end())
     {
         return DYN_MODE_SHARED;

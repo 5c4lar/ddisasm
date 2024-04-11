@@ -48,13 +48,13 @@ gtirb::ErrorOr<GTIRB> GtirbBuilder::read(std::string Path)
         // is released.
         std::shared_ptr<LIEF::Binary> Binary{
             LIEF::ELF::is_elf(Path)
-                ? LIEF::ELF::Parser::parse(Path, LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_SECTION)
+                ? LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_SECTION})
                 : LIEF::Parser::parse(Path)};
 
         // If the binary had no sections, parse again with AUTO count method.
         if(LIEF::ELF::is_elf(Path) && Binary->sections().empty())
         {
-            Binary = LIEF::ELF::Parser::parse(Path, LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_AUTO);
+            Binary = LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_AUTO});
         }
 
         if(!Binary)
@@ -65,20 +65,20 @@ gtirb::ErrorOr<GTIRB> GtirbBuilder::read(std::string Path)
         // Build GTIRB from supported binary object formats.
         switch(Binary->format())
         {
-            case LIEF::EXE_FORMATS::FORMAT_ELF:
+            case LIEF::Binary::FORMATS::ELF:
             {
                 ElfReader Elf(Path, fs::path(Path).filename().string(), Context, IR, Binary);
                 Elf.build();
                 break;
             }
-            case LIEF::EXE_FORMATS::FORMAT_PE:
+            case LIEF::Binary::FORMATS::PE:
             {
                 PeReader Pe(Path, fs::path(Path).filename().string(), Context, IR, Binary);
                 Pe.build();
                 break;
             }
-            case LIEF::EXE_FORMATS::FORMAT_MACHO:
-            case LIEF::EXE_FORMATS::FORMAT_UNKNOWN:
+            case LIEF::Binary::FORMATS::MACHO:
+            case LIEF::Binary::FORMATS::UNKNOWN:
             default:
                 return GtirbBuilder::build_error::NotSupported;
         }
@@ -100,13 +100,16 @@ gtirb::ErrorOr<GTIRB> GtirbBuilder::read(std::string Path)
                 Archive.readFile(Object, ObjectData);
 
                 std::shared_ptr<LIEF::Binary> Binary{
-                    LIEF::Parser::parse(ObjectData, Object.FileName)};
+                    LIEF::Parser::parse(ObjectData)
+                };
+//                    LIEF::Parser::parse(ObjectData, Object.FileName)};
+
                 if(!Binary)
                 {
                     return GtirbBuilder::build_error::ParseError;
                 }
 
-                if(Binary->format() != LIEF::EXE_FORMATS::FORMAT_ELF)
+                if(Binary->format() != LIEF::Binary::FORMATS::ELF)
                 {
                     return GtirbBuilder::build_error::NotSupported;
                 }
@@ -177,9 +180,9 @@ gtirb::FileFormat GtirbBuilder::format()
 {
     switch(Binary->format())
     {
-        case LIEF::EXE_FORMATS::FORMAT_ELF:
+        case LIEF::Binary::FORMATS::ELF:
             return gtirb::FileFormat::ELF;
-        case LIEF::EXE_FORMATS::FORMAT_PE:
+        case LIEF::Binary::FORMATS::PE:
             return gtirb::FileFormat::PE;
         default:
             break;

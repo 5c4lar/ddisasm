@@ -419,7 +419,7 @@ void ElfReader::resurrectSymbols()
             {
                 LIEF::Convert::swap_endian<LIEF::ELF::details::Elf32_Sym>(P);
             }
-            LIEF::ELF::Symbol Symbol(*P);
+            LIEF::ELF::Symbol Symbol(*P, Elf->header().machine_type());
             std::optional<std::string> Name = getStringAt(S.st_name);
             if(Name)
             {
@@ -758,9 +758,10 @@ void ElfReader::buildSections()
     }
 
     // Add `overlay` aux data table.
-    if(auto Overlay = Elf->overlay(); Overlay.size() > 0)
+    if(auto Overlay = Elf->overlay(); !Overlay.empty())
     {
-        Module->addAuxData<gtirb::schema::Overlay>(std::move(Overlay));
+        Module->addAuxData<gtirb::schema::Overlay>(
+            gtirb::schema::Overlay::Type{Overlay.begin(), Overlay.end()});
     }
 
     Module->addAuxData<gtirb::schema::Alignment>(std::move(Alignment));

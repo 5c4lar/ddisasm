@@ -698,3 +698,7 @@ if(BUILD_FUNINFER)
 
   install(TARGETS funinfer DESTINATION bin)
 endif()
+
+# ====== tools ============
+
+add_subdirectory(tools)

@@ -396,7 +396,7 @@ std::vector<auxdata::PeImportEntry> PeReader::importEntries()
         uint64_t ImageBase = Pe->optional_header().imagebase();
         for(auto &Entry : Import.entries())
         {
-            std::string ImportName = fs::change_extension(Import.name(), "").string();
+            std::string ImportName = fs::path(Import.name()).replace_extension("").string();
             int64_t Ordinal = Entry.is_ordinal() ? Entry.ordinal() : -1;
             std::string Function = Entry.is_ordinal()
                                        ? ImportName + '@' + std::to_string(Entry.ordinal())

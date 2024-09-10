@@ -48,13 +48,13 @@ gtirb::ErrorOr<GTIRB> GtirbBuilder::read(std::string Path)
         // is released.
         std::shared_ptr<LIEF::Binary> Binary{
             LIEF::ELF::is_elf(Path)
-                ? LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_SECTION})
+                ? LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::ParserConfig::DYNSYM_COUNT::SECTION})
                 : LIEF::Parser::parse(Path)};
 
         // If the binary had no sections, parse again with AUTO count method.
         if(LIEF::ELF::is_elf(Path) && Binary->sections().empty())
         {
-            Binary = LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::DYNSYM_COUNT_METHODS::COUNT_AUTO});
+            Binary = LIEF::ELF::Parser::parse(Path, LIEF::ELF::ParserConfig{.count_mtd=LIEF::ELF::ParserConfig::DYNSYM_COUNT::AUTO});
         }
 
         if(!Binary)

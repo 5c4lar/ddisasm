@@ -51,22 +51,27 @@ class ArmMiscTest(unittest.TestCase):
             ).ir()
             m = ir_library.modules[0]
 
-            main_first_block = None
-            blocks_are_data = []
             for sym in m.symbols:
                 if sym.name == "main":
-                    main_first_block = sym.referent
+                    self.assertTrue(isinstance(sym.referent, gtirb.CodeBlock))
                     continue
                 if not sym.name.startswith(".INVALID"):
                     continue
 
-                blocks_are_data.append(
-                    isinstance(sym.referent, gtirb.DataBlock)
-                )
-
-            self.assertTrue(isinstance(main_first_block, gtirb.CodeBlock))
-            self.assertTrue(all(blocks_are_data))
-            self.assertEqual(len(blocks_are_data), len(invalid_syms))
+                if "THUMB" in sym.name:
+                    # The symbol should not point to a thumb code block
+                    self.assertFalse(
+                        isinstance(sym.referent, gtirb.CodeBlock)
+                        and sym.referent.decode_mode
+                        == gtirb.CodeBlock.DecodeMode.Thumb
+                    )
+                else:
+                    # The symbol should not point to an arm code block
+                    self.assertFalse(
+                        isinstance(sym.referent, gtirb.CodeBlock)
+                        and sym.referent.decode_mode
+                        == gtirb.CodeBlock.DecodeMode.Default
+                    )
 
     @unittest.skipUnless(
         platform.system() == "Linux", "This test is linux only."
@@ -219,6 +224,51 @@ class ArmMiscTest(unittest.TestCase):
             reasons = set(kb[3] for kb in known_blocks)
             self.assertIn("$a", reasons)
             self.assertIn("$t", reasons)
+
+    @unittest.skipUnless(
+        platform.system() == "Linux", "This test is linux only."
+    )
+    def test_adr_symbolic_expr(self):
+        """
+        Test adr instructions generate the right symbolic expressions
+        """
+        binary = Path("ex")
+        with cd(ex_arm_asm_dir / "ex_adr_to_code"):
+            self.assertTrue(
+                compile(
+                    "arm-linux-gnueabihf-gcc",
+                    "arm-linux-gnueabihf-g++",
+                    "-O0",
+                    [],
+                    "qemu-arm -L /usr/arm-linux-gnueabihf",
+                )
+            )
+            ir_library = disassemble(
+                binary,
+                strip_exe="arm-linux-gnueabihf-strip",
+                strip=False,
+            ).ir()
+
+            m = ir_library.modules[0]
+            text_section = [s for s in m.sections if s.name == ".text"][0]
+            symexprs = [
+                s
+                for _, _, s in text_section.symbolic_expressions_at(
+                    range(
+                        text_section.address,
+                        text_section.address + text_section.size,
+                    )
+                )
+            ]
+            referred_symbol_names = set()
+            for symexpr in symexprs:
+                referred_symbol_names |= {
+                    symbol.name for symbol in symexpr.symbols
+                }
+            self.assertIn("arm_to_arm", referred_symbol_names)
+            self.assertIn("arm_to_thumb", referred_symbol_names)
+            self.assertIn("thumb_to_arm", referred_symbol_names)
+            self.assertIn("thumb_to_thumb", referred_symbol_names)
 
 
 if __name__ == "__main__":

@@ -470,7 +470,10 @@ string_candidate(EA,End,"ascii"):-
 
 string_candidate(EA,End,"ascii"):-
     string_candidate(_,EA,"ascii"),
-    ascii_string(EA,End).
+    ascii_string(EA,End),
+    data_segment(DataBeg,DataEnd),
+    EA >= DataBeg,
+    End <= DataEnd.
 
 /**
 String candidate refinement projects candidate string references onto a compound
@@ -951,7 +954,11 @@ symbolic_expr_symbol_minus_symbol(EA,Size,SymbolName1,SymbolName2,Scale,FinalOff
         NewSymbol2 = Symbol2,
         FinalOffset = Offset1
     ),
-    best_symexpr_symbol(NewSymbol1,SymbolName1,"Beg"),
+    (
+        NewSymbol1 = NewSymbol2, Symbol1Loc = Symbol2Loc;
+        NewSymbol1 != NewSymbol2, Symbol1Loc = "Beg"
+    ),
+    best_symexpr_symbol(NewSymbol1,SymbolName1,Symbol1Loc),
     (
         boundary_sym_expr(EA,NewSymbol2), Symbol2Loc = "End"
         ;

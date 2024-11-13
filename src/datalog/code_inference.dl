@@ -286,7 +286,8 @@ invalid(EA+1,"INT3"):-
          binary_isa("X64")
     ),
     instruction_get_operation(EA,"INT3"),
-    instruction_get_operation(EA+1,"INT3").
+    instruction_get_operation(EA+1,"INT3"),
+    instruction_get_operation(EA+2,"INT3").
 
 .decl possible_ea(EA:address) inline
 
@@ -359,12 +360,48 @@ block_limit(as(EA,address)):-
     (
         op_immediate(_,EA,_);
         pc_relative_operand(_,_,EA);
-        arch.pc_relative_addr(_,_,EA);
         basic_target(EA);
         instruction_has_loop_prefix(EA);
         fde_addresses(_,EA);
         lsda_callsite_addresses(_,EA, _)
     ).
+
+// block limits before and after data accesses
+block_limit(Inst):-
+    (
+        arch.simple_data_load(_,EA,_);
+        composite_data_access(_,_,EA,_);
+        arch.pc_relative_addr(_,_,EA)
+    ),
+    arch.instruction_at(EA,Inst).
+
+block_limit(Inst):-
+    (
+        arch.simple_data_load(_,EA,Size);
+        composite_data_access(_,_,EA,Size);
+        repeated_byte(EA,_,Size), Size > 8
+    ),
+    arch.instruction_at(EA+Size,Inst).
+
+/**
+We want to split blocks that go from non-padding to padding
+or from padding to non-padding.
+
+However, this cannot be a regular block_limit because several
+instructions could fallthrough into another one.
+We need to consider the source address too.
+*/
+.decl transition_block_limit(EA:address,Next:address)
+
+transition_block_limit(EA,Next):-
+    is_padding(Next),
+    next(EA,Next),
+    !is_padding(EA).
+
+transition_block_limit(EA,Next):-
+    is_padding(EA),
+    next(EA,Next),
+    !is_padding(Next).
 
 // The targets are computed incrementally now as we traverse the code
 // likely_ea and possible_target_from are mutually recursive
@@ -409,22 +446,25 @@ code_in_block_candidate(EA,EA):-
     possible_target(EA),
     possible_ea(EA).
 
-// extend the block as long as we are sure to fallthrough and we have not
+// Extend the block as long as we are sure to fallthrough and we have not
 // reached a block limit
 code_in_block_candidate(EA,Start):-
     code_in_block_candidate(EA2,Start),
     must_fallthrough(EA2,EA),
-    !block_limit(EA).
+    !block_limit(EA),
+    !transition_block_limit(EA2,EA).
 
 
-// if reached a block limit or an instruction that does not necessarily
+// If reached a block limit or an instruction that does not necessarily
 // fallthrough continue exploring but start a new block
+// Always start a new block if we switch to padding instructions.
 code_in_block_candidate(EA,EA):-
     code_in_block_candidate(EA2,_),
     may_fallthrough(EA2,EA),
     (
         !must_fallthrough(EA2,EA);
-        block_limit(EA)
+        block_limit(EA);
+        transition_block_limit(EA2,EA)
     ),
     possible_ea(EA).
 
@@ -450,18 +490,23 @@ padding_block_limit(Inst):-
 /**
 Build padding candidates from nop instructions
 
-This is analagous to code_in_block_candidate, but for blocks of type "padding".
+This is analogous to code_in_block_candidate, but for blocks of type "padding".
 */
 .decl nop_in_padding_candidate(EA:address,Start:address)
 
 nop_in_padding_candidate(EA,EA):-
     is_padding(EA),
+    !code_in_block_candidate_refined(EA,_),
     next(Prev,EA),
-    !is_padding(Prev).
+    (
+        !is_padding(Prev);
+        code_in_block_candidate_refined(Prev,_)
+    ).
 
 nop_in_padding_candidate(EA,EA):-
     padding_block_limit(EA),
-    is_padding(EA).
+    is_padding(EA),
+    !code_in_block_candidate_refined(EA,EA).
 
 nop_in_padding_candidate(Next,Start):-
     nop_in_padding_candidate(EA,Start),
@@ -480,38 +525,55 @@ padding_block_candidate(Start,Next-Start):-
     next(EA,Next),
     !nop_in_padding_candidate(Next,Start).
 
-// in case we cannot fallthrough, we skip any nops that we might find
-// and generate a new possible_target once the nops finish
+
+/**
+Linear component of the forward traversal. after_end traverses
+the code lineraly skipping nops. Traversals starts at points
+where there is a no-fallthough, after jump tables and after literal pools.
+`End` represents where the traversal started and `EA` represents the current
+address.
+*/
 .decl after_end(EA:address,End:address)
 
+// Start propagating after no-fallthrough blocks
 after_end(Next,End):-
     code_in_block_candidate(End,_),
     next(End,Next),
     !may_fallthrough(End,Next).
 
+// If we have a may_fallthrough that goes to invalid, we start an after_end
+// propagation.
 after_end(Next,End):-
-    after_end(EA,End),
-    is_padding(EA),
-    next(EA,Next).
+    code_in_block_candidate(End,_),
+    may_fallthrough(End,Next),
+    !must_fallthrough(End,Next),
+    invalid(Next,_).
 
-after_end(Next,End):-
-    relative_address(End,Size,_,_,_,_), Next=End+Size,
-    !relative_address(Next,_,_,_,_,_),
-    is_padding(Next).
-
-// This is used to find code after literal pools in ARM.
-after_end(Next,End):-
-    binary_isa("ARM"),
-    after_end(Next0,End),
-    EA = Next0 - (Next0 band 1),
-    data_block_candidate(EA,Size),
-    Next = Next0 + Size.
-
+// Search after int3 instructions in PEs
 after_end(Next,End):-
     binary_format("PE"),
     instruction_get_operation(End,"INT3"),
     next(End,Next),
     !instruction_get_operation(Next,"INT3").
+
+// Search after jump tables and literal pools
+after_end(Next,EA):-
+    data_block_candidate(EA,Size),
+    Next = EA + Size,
+    !relative_address(Next,_,_,_,_,_).
+
+// Search thumb code after literal pools
+after_end(NextThumb,EA):-
+    binary_isa("ARM"),
+    data_block_candidate(EA,Size),
+    NextThumb = EA + Size + 1.
+
+// Propagation through nops
+after_end(Next,End):-
+    after_end(EA,End),
+    is_padding(EA),
+    next(EA,Next).
+
 
 possible_target(EA):-
     after_end(EA,_),
@@ -519,6 +581,14 @@ possible_target(EA):-
         !is_padding(EA);
         block_limit(EA)
     ).
+
+// In ARM, if we find invalid instructions, we try with the other decode mode.
+possible_target(SwitchDecodeModeEA):-
+    binary_isa("ARM"),
+    after_end(EA,_),
+    !is_padding(EA),
+    invalid(EA,_),
+    SwitchDecodeModeEA = EA bxor 1.
 
 ///////////////////////////////////////////////////////////////////////
 // We are done with the recursive exploration
@@ -581,6 +651,7 @@ data_block_candidate(Block,AccessSize):-
     code_in_block_candidate(EA,_),
     code_in_block_candidate(EA_load,_).
 
+// Repeated bytes in code section
 data_block_candidate(EA,Size):-
     repeated_byte(EA,_,Size), Size > 8,
     !is_padding(EA).
@@ -603,13 +674,37 @@ known_block(Block,"data",4,"relocation"):-
     !instruction_has_relocation(_,Block),
     address_in_data(Block,_).
 
+/**
+String in code section, either it is referenced
+or it is long enough (>8 bytes).
+
+EA:    adr r0, RefAddr
+...
+RefAddr: .string "..."
+*/
+block_heuristic(RefAddr,"data",Size,0,"possible string"),
+data_block_candidate(RefAddr,Size):-
+    code_section(Name),
+    loaded_section(BegSect,EndSect,Name),
+    BegSect <= RefAddr, RefAddr < EndSect,
+    ascii_string(RefAddr,End),
+    Size = End - RefAddr,
+    (
+        arch.pc_relative_addr(EA,_,RefAddr),
+        code_in_block_candidate(EA,_),
+        !composite_data_access(EA,_,_,_)
+        ;
+        Size > 8
+    ).
+
+// Pointer to a string
 data_block_candidate(Addr,Pt_size):-
     code_section(Name),
     loaded_section(BegSect,EndSect,Name),
     BegSect <= Addr, Addr < EndSect,
     aligned_address_in_data(Addr,Dest),
     ascii_string(StrBeg,StrEnd),
-    StrBeg >= Dest, Dest < StrEnd,
+    StrBeg <= Dest, Dest < StrEnd,
     arch.pointer_size(Pt_size).
 /**
 The block candidate defined by address 'Block' extends from 'BegAddr' to 'EndAddr'.

@@ -14,6 +14,7 @@ from disassemble_reassemble_check import (
 from pathlib import Path
 from typing import Optional, Tuple
 from gtirb.cfg import EdgeType
+from gtirb.symbolicexpression import SymbolicExpression
 import gtirb
 import lief
 
@@ -466,7 +467,10 @@ class AuxDataTests(unittest.TestCase):
             alignment_list = [
                 alignment
                 for block, alignment in alignments
-                if block.address > main_block.address
+                if (
+                    block.address > main_block.address
+                    and block in m.data_blocks
+                )
             ]
 
             # alignment=16: `data128.1`, `data128.2`
@@ -504,6 +508,31 @@ class AuxDataTests(unittest.TestCase):
 
             # alignment=64: `data512`
             self.assertEqual(alignment_list.count(64), 1)
+
+    @unittest.skipUnless(
+        platform.system() == "Linux", "This test is linux only."
+    )
+    def test_func_align(self):
+        """
+        Test that alignment directives are correctly generated for functions.
+        """
+        binary = "ex"
+        with cd(ex_dir / "ex_memberFunction"):
+            self.assertTrue(compile("gcc", "g++", "-O0", []))
+            ir = disassemble(Path(binary)).ir()
+            m = ir.modules[0]
+
+            funcs = ["_ZN1a3fooEv", "_ZN1a3barEv", "_ZN1a3bazEv"]
+            #        -------------  -------------  -------------
+            #           global          local          weak
+
+            func_blocks = [
+                next(m.symbols_named(sym)).referent for sym in funcs
+            ]
+
+            alignments = m.aux_data["alignment"].data
+
+            self.assertTrue(all(b in alignments for b in func_blocks))
 
 
 class RawGtirbTests(unittest.TestCase):
@@ -1014,6 +1043,44 @@ class ZeroEntryPointTests(unittest.TestCase):
 
             # `_start` should not exist in the module.
             self.assertEqual(len(list(m.symbols_named("_start"))), 0)
+
+
+class TLSLocalExecTests(unittest.TestCase):
+    @unittest.skipUnless(
+        platform.system() == "Linux", "This test is linux only."
+    )
+    def test_tls_local_exec(self):
+        """
+        Test that TLS attributes are correctly generated.
+        """
+
+        binary = Path("ex")
+        with cd(ex_asm_dir / "ex_tls_local_exec"):
+            self.assertTrue(compile("gcc", "g++", "-Os", []))
+            ir_library = disassemble(binary).ir()
+            m = ir_library.modules[0]
+
+            for sym_name in ["var_tpoff_1", "var_tpoff_2"]:
+                sym = next(m.symbols_named(sym_name))
+                self.assertIsInstance(sym.referent, gtirb.CodeBlock)
+
+                block = sym.referent
+                bi = block.byte_interval
+                # Get the sym-expr for the first instruction of size 7:
+                # movq var@tpoff, %rax
+                sexpr = set(
+                    bi.symbolic_expressions_at(
+                        range(block.address, block.address + 7)
+                    )
+                )
+                self.assertEqual(len(sexpr), 1)
+                se = next(iter(sexpr))[2]
+                self.assertIsInstance(se, gtirb.SymAddrConst)
+                self.assertEqual(se.symbol.name, "var")
+                self.assertEqual(se.offset, 0)
+                self.assertEqual(
+                    se.attributes, {SymbolicExpression.Attribute.TPOFF}
+                )
 
 
 if __name__ == "__main__":
